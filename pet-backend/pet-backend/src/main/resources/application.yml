@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL 驱动类（8.x及以上版本使用此路径）
+    url: jdbc:mysql://localhost:3306/petwork?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root  # 数据库登录用户名
+    password: lxt1113  # 数据库登录密码（根据实际情况修改）
+
+  # Redis 配置（修正层级：spring.redis 而非 spring.data.redis）
+  data:
+    redis:
+      host: localhost  # Redis服务器地址
+      port: 6379       # Redis默认端口
+      timeout: 30000   # 连接超时时间（毫秒）
+      lettuce:
+        pool:
+          max-active: 8    # 最大连接数
+          max-idle: 8      # 最大空闲连接数
+          min-idle: 2      # 最小空闲连接数
+          max-wait: 10000  # 最大阻塞等待时间（毫秒）
+
+  # 文件上传大小限制配置
+  servlet:
+    multipart:
+      max-file-size: 10MB    # 单文件最大10MB
+      max-request-size: 20MB # 单次请求总大小最大20MB
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml  # MyBatis映射文件扫描路径
+  type-aliases-package: org.example.petbackend.entity  # 实体类包路径
+  configuration:
+    map-underscore-to-camel-case: true  # 下划线转驼峰命名（如pet_name -> petName）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 可选：打印SQL日志（开发环境调试用）
+
+server:
+  port: 8080  # 应用启动端口（若被占用可改为8081等）
+  servlet:
+    encoding:
+      force-response: true  # 强制响应UTF-8编码（解决中文乱码）

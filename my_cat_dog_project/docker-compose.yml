@@ -1,0 +1,53 @@
+version: '3'
+
+services:
+  # 第一个训练容器：20轮，学习率0.0001
+  trainer-1:
+    build: .  # 使用当前目录的Dockerfile构建镜像
+    command: python train.py --epochs 20 --lr 0.0001  # 启动命令，传递参数
+    volumes:
+      # 将本地的dataset目录映射到容器内的/app/dataset
+      - ./dataset:/app/dataset:ro
+      # 将本地的models目录映射到容器内的/app/models（保存训练好的模型）
+      - ./models:/app/models
+    environment:
+      # 设置环境变量，供train.py使用
+      - TRAIN_DATA_DIR=/app/dataset/train
+      - VALID_DATA_DIR=/app/dataset/validation
+      - MODEL_SAVE_PATH=/app/models/model_1.h5
+
+  # 第二个训练容器：20轮，学习率0.0002（不同参数）
+  trainer-2:
+    build: .
+    command: python train.py --epochs 20 --lr 0.0002
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ./models:/app/models
+    environment:
+      - TRAIN_DATA_DIR=/app/dataset/train
+      - VALID_DATA_DIR=/app/dataset/validation
+      - MODEL_SAVE_PATH=/app/models/model_2.h5
+
+  # 第三个训练容器：30轮，学习率0.0001
+  trainer-3:
+    build: .
+    command: python train.py --epochs 30 --lr 0.0001
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ./models:/app/models
+    environment:
+      - TRAIN_DATA_DIR=/app/dataset/train
+      - VALID_DATA_DIR=/app/dataset/validation
+      - MODEL_SAVE_PATH=/app/models/model_3.h5
+
+  # 第四个训练容器：30轮，学习率0.0002
+  trainer-4:
+    build: .
+    command: python train.py --epochs 30 --lr 0.0002
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ./models:/app/models
+    environment:
+      - TRAIN_DATA_DIR=/app/dataset/train
+      - VALID_DATA_DIR=/app/dataset/validation
+      - MODEL_SAVE_PATH=/app/models/model_4.h5

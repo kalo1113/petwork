@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>宠物管理系统 - 后端接口测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        /* ... (样式部分保持不变) ... */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Microsoft YaHei", sans-serif; padding: 20px; background-color: #f5f7fa; }
+        h2 { color: #333; margin-bottom: 20px; text-align: center; }
+        .module { background-color: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); padding: 20px; margin-bottom: 30px; }
+        h3 { color: #409EFF; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; text-align: center; }
+        th, td { border: 1px solid #ddd; padding: 12px 15px; }
+        th { background-color: #f0f9ff; color: #333; font-weight: 600; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #f0f0f0; }
+        table img { max-width: 150px !important; max-height: 150px !important; object-fit: cover; border-radius: 4px; }
+        .form-item { margin-bottom: 15px; }
+        label { display: inline-block; width: 120px; text-align: right; margin-right: 10px; color: #666; }
+        input, select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; width: 250px; }
+        button { padding: 8px 20px; background-color: #409EFF; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-left: 130px; margin-right: 10px; }
+        button:hover { background-color: #66b1ff; }
+        button.delete-btn { background-color: #F56C6C; }
+        button.delete-btn:hover { background-color: #f78989; }
+        .error { color: #F56C6C; font-size: 12px; margin-left: 10px; }
+        .pagination { margin-top: 15px; text-align: center; }
+        .pagination select, .pagination button { margin: 0 5px; }
+        .test-result { margin-top: 15px; padding: 10px; border-radius: 4px; background-color: #f8f8f8; border-left: 4px solid #409EFF; }
+        .test-success { border-left-color: #67C23A; color: #67C23A; }
+        .test-error { border-left-color: #F56C6C; color: #F56C6C; }
+    </style>
+</head>
+<body>
+<h2>宠物管理系统 - 后端接口测试</h2>
+
+<!-- 1. 新增宠物模块 (已修正字段) -->
+<div class="module">
+    <h3>1. 新增宠物</h3>
+    <div class="form-item">
+        <label>宠物名称：</label>
+        <input type="text" id="petName" placeholder="请输入宠物名称" value="测试宠物">
+        <span class="error" id="petNameError"></span>
+    </div>
+    <div class="form-item">
+        <label>宠物类型：</label>
+        <input type="text" id="petType" placeholder="例如：猫，狗" value="猫">
+        <span class="error" id="petTypeError"></span>
+    </div>
+    <div class="form-item">
+        <label>出生日期：</label>
+        <input type="date" id="petBirthday" value="2023-01-01">
+        <span class="error" id="petBirthdayError"></span>
+    </div>
+    <div class="form-item">
+        <label>所属用户ID：</label>
+        <input type="number" id="userId" placeholder="请输入所属用户ID" value="1001">
+        <span class="error" id="userIdError"></span>
+    </div>
+    <div class="form-item">
+        <label>宠物性别：</label>
+        <select id="petGender">
+            <option value="公" selected>公</option>
+            <option value="母">母</option>
+        </select>
+        <span class="error" id="petGenderError"></span>
+    </div>
+    <div class="form-item">
+        <label>是否绝育：</label>
+        <select id="isSterilized">
+            <option value="否" selected>否</option>
+            <option value="是">是</option>
+        </select>
+        <span class="error" id="isSterilizedError"></span>
+    </div>
+    <button onclick="addPet()">提交新增</button>
+    <div id="addPetResult" class="test-result" style="display:none;"></div>
+</div>
+
+<!-- 2. 图片上传关联模块 (已修正) -->
+<div class="module">
+    <h3>2. 上传并关联宠物图片</h3>
+    <div class="form-item">
+        <label>宠物ID（已存在）：</label>
+        <input type="number" id="bindPetId" placeholder="请输入宠物ID" value="1">
+    </div>
+    <div class="form-item">
+        <label>图片类型：</label>
+        <select id="photoType">
+            <option value="face" selected>正脸照 (face)</option>
+            <option value="body">全身照 (body)</option>
+        </select>
+    </div>
+    <div class="form-item">
+        <label>选择图片：</label>
+        <input type="file" id="imgFile" accept="image/*" onchange="previewImg(this)">
+        <div id="imgPreview" style="margin: 10px 0 0 130px;"></div>
+    </div>
+    <button onclick="uploadAndBind()">上传并关联</button>
+    <div id="uploadResult" class="test-result" style="display:none;"></div>
+</div>
+
+<!-- 3. 查询宠物列表模块 (已修正) -->
+<div class="module">
+    <h3>3. 查询宠物列表</h3>
+    <div class="form-item">
+        <label>按用户ID筛选：</label>
+        <input type="number" id="queryUserId" placeholder="留空查询所有" value="1001">
+    </div>
+    <button onclick="getPetListWithPage(1)">查询列表</button>
+    <div id="petListArea"></div>
+    <div class="pagination" style="display: none; margin-top: 15px;">
+        <span>每页条数：</span>
+        <select id="pageSize" onchange="getPetListWithPage(1)">
+            <option value="5">5条</option>
+            <option value="10" selected>10条</option>
+            <option value="20">20条</option>
+        </select>
+        <button onclick="getPetListWithPage(currentPage-1)" disabled id="prevBtn">上一页</button>
+        <span id="pageInfo">第1页 / 共0页</span>
+        <button onclick="getPetListWithPage(currentPage+1)" disabled id="nextBtn">下一页</button>
+    </div>
+</div>
+
+<script>
+    axios.defaults.baseURL = "http://localhost:8080";
+    let currentPage = 1;
+    let totalPage = 0;
+
+    // 新增宠物表单校验 (已修正)
+    function validateAddForm() {
+        let isValid = true;
+        document.querySelectorAll('.error').forEach(el => el.textContent = '');
+        if (!document.getElementById("petName").value.trim()) {
+            document.getElementById("petNameError").textContent = "不能为空"; isValid = false;
+        }
+        if (!document.getElementById("petType").value.trim()) {
+            document.getElementById("petTypeError").textContent = "不能为空"; isValid = false;
+        }
+        if (!document.getElementById("petBirthday").value) {
+            document.getElementById("petBirthdayError").textContent = "不能为空"; isValid = false;
+        }
+        if (!document.getElementById("userId").value || document.getElementById("userId").value <= 0) {
+            document.getElementById("userIdError").textContent = "请输入有效ID"; isValid = false;
+        }
+        return isValid;
+    }
+
+    // 新增宠物 (已修正)
+    async function addPet() {
+        if (!validateAddForm()) return;
+        const petData = {
+            petName: document.getElementById("petName").value.trim(),
+            petType: document.getElementById("petType").value.trim(),
+            petBirthday: document.getElementById("petBirthday").value,
+            userId: parseInt(document.getElementById("userId").value),
+            petGender: document.getElementById("petGender").value,
+            isSterilized: document.getElementById("isSterilized").value
+        };
+        try {
+            const res = await axios.post("/pet/add", petData);
+            showResult("addPetResult", true, `新增成功！宠物ID: ${res.data.data.petId}`);
+            document.getElementById("bindPetId").value = res.data.data.petId; // 自动填充到上传模块
+        } catch (err) {
+            showResult("addPetResult", false, `新增失败: ${err.response?.data?.msg || err.message}`);
+        }
+    }
+
+    // 图片预览
+    function previewImg(input) {
+        const file = input.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = e => document.getElementById("imgPreview").innerHTML = `<img src="${e.target.result}" style="max-width: 200px; max-height: 200px;">`;
+            reader.readAsDataURL(file);
+        } else {
+            document.getElementById("imgPreview").innerHTML = "";
+        }
+    }
+
+    // 上传并关联图片 (已修正)
+    async function uploadAndBind() {
+        const petId = document.getElementById("bindPetId").value;
+        const photoType = document.getElementById("photoType").value;
+        const file = document.getElementById("imgFile").files[0];
+        if (!petId || !file) {
+            return showResult("uploadResult", false, "请输入宠物ID并选择图片");
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("petId", petId);
+        formData.append("photoType", photoType);
+        try {
+            const res = await axios.post("/pet/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+            showResult("uploadResult", true, `上传成功！图片URL: ${res.data.data}`);
+        } catch (err) {
+            showResult("uploadResult", false, `上传失败: ${err.response?.data?.msg || err.message}`);
+        }
+    }
+
+    // 查询宠物列表 (已修正)
+    async function getPetListWithPage(page) {
+        const userId = document.getElementById("queryUserId").value || undefined;
+        const pageSize = document.getElementById("pageSize").value;
+        try {
+            const res = await axios.get("/pet/page", { params: { pageNum: page, pageSize, userId } });
+            const { records: pets, total, pages } = res.data.data;
+            totalPage = pages;
+            currentPage = page;
+            const listArea = document.getElementById("petListArea");
+            if (pets.length === 0) {
+                listArea.innerHTML = "<p>暂无数据</p>";
+            } else {
+                listArea.innerHTML = `<table><tr><th>ID</th><th>名称</th><th>类型</th><th>生日</th><th>性别</th><th>绝育</th><th>正脸照</th><th>全身照</th></tr>${pets.map(pet => `
+                    <tr>
+                        <td>${pet.petId}</td>
+                        <td>${pet.petName}</td>
+                        <td>${pet.petType}</td>
+                        <td>${pet.petBirthday}</td>
+                        <td>${pet.petGender}</td>
+                        <td>${pet.isSterilized}</td>
+                        <td>${pet.faceImg ? `<img src="${pet.faceImg}">` : '无'}</td>
+                        <td>${pet.bodyImg ? `<img src="${pet.bodyImg}">` : '无'}</td>
+                    </tr>`).join('')}</table>`;
+            }
+            updatePagination();
+        } catch (err) {
+            document.getElementById("petListArea").innerHTML = `<p class="test-error">查询失败: ${err.message}</p>`;
+        }
+    }
+
+    // 更新分页控件
+    function updatePagination() {
+        const pagination = document.querySelector(".pagination");
+        pagination.style.display = totalPage > 1 ? "block" : "none";
+        document.getElementById("prevBtn").disabled = currentPage <= 1;
+        document.getElementById("nextBtn").disabled = currentPage >= totalPage;
+        document.getElementById("pageInfo").textContent = `第${currentPage}页 / 共${totalPage}页`;
+    }
+
+    // 显示结果提示
+    function showResult(elementId, isSuccess, message) {
+        const resultEl = document.getElementById(elementId);
+        resultEl.textContent = message;
+        resultEl.className = `test-result ${isSuccess ? 'test-success' : 'test-error'}`;
+        resultEl.style.display = "block";
+    }
+</script>
+</body>
+</html>
