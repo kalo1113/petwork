@@ -1,7 +1,7 @@
 import PetHome from '@/views/user/PetHome.vue'
 import PetGuarantee from '@/views/user/PetGuarantee.vue'
 import PetMall from '@/views/user/PetMall.vue'
-import UserCenter from '@/views/user/UserCenter.vue'
+import UserCenter from '@/views/user/my/UserCenter.vue'
 
 export default [
   { path: '/', redirect: '/home' },

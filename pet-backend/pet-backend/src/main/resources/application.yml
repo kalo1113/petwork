@@ -24,6 +24,13 @@ spring:
       max-file-size: 10MB    # 单文件最大10MB
       max-request-size: 20MB # 单次请求总大小最大20MB
 
+# ========== 头像上传路径配置 ==========
+upload:
+  # 头像存储根路径（根据你的项目路径调整，建议用绝对路径）
+  user-avatar-path: F:/毕设/新建文件夹/pet-backend/userphoto/
+  # 头像访问映射（前端通过http://localhost:8080/avatar/xxx.jpg访问）
+  avatar-access-path: /avatar/
+
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml  # MyBatis映射文件扫描路径
   type-aliases-package: org.example.petbackend.entity  # 实体类包路径
@@ -36,3 +43,9 @@ server:
   servlet:
     encoding:
       force-response: true  # 强制响应UTF-8编码（解决中文乱码）
+
+# 可选：日志配置（方便调试文件上传）
+logging:
+  level:
+    org.example.petbackend: debug
+    org.springframework.web.multipart: debug
