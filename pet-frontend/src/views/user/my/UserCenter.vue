@@ -175,11 +175,11 @@ import { ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'elem
 import axios from 'axios'
 // 1. 引入Vue Router的useRouter方法
 import { useRouter } from 'vue-router'
+import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
 // 2. 创建router实例
 const router = useRouter()
 // ========== default-avatar+后端地址 ==========
 const baseUrl = 'http://localhost:8080' // 和UserSetting保持一致
-const defaultAvatar = '/src/assets/images/my-icon/default-avatar.svg' // default-avatar路径
 
 // 登录状态管理
 const userInfo = ref({

@@ -196,15 +196,13 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-
+import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
 // 初始化路由实例
 const router = useRouter()
 
 // ========== 核心配置 ==========
 // 后端接口基础地址（根据实际部署地址修改）
 const baseUrl = 'http://localhost:8080'
-// default-avatar路径
-const defaultAvatar = '/src/assets/images/my-icon/default-avatar.svg'
 
 // ========== 状态管理 ==========
 // 用户信息（匹配后端User实体的avatarUrl字段）
