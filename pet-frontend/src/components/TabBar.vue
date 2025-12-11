@@ -14,7 +14,7 @@
       <span>商城</span>
     </router-link>
     <router-link to="/my" class="tab-item">
-      <img src="@/assets/images/导航栏我的.svg" alt="my-icon" class="tab-icon" />
+      <img src="@/assets/images/导航栏我的.svg" alt="我的图标" class="tab-icon" />
       <span>我的</span>
     </router-link>
   </div>

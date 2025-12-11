@@ -1,5 +1,6 @@
 package org.example.petbackend.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +12,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * WebMvc配置（整合日期格式化 + 头像静态资源映射）
  */
+@Slf4j
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
@@ -32,8 +34,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
     // ========== 头像静态资源映射配置 ==========
     @Override
     public void addResourceHandlers(@NotNull ResourceHandlerRegistry registry) {
-        // 配置规则：访问 http://localhost:8080/avatar/xxx.jpg → 映射到本地userphoto文件夹
+        // 用File.separator处理路径分隔符，兼容Windows/Linux
+        String resourcePath = "file:" + userAvatarPath;
+        // 打印映射路径（调试用，确认路径正确）
+        log.info("头像资源映射：/avatar/** → {}", resourcePath);
         registry.addResourceHandler("/avatar/**")
-                .addResourceLocations("file:" + userAvatarPath);
+                .addResourceLocations(resourcePath);
     }
 }

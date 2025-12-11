@@ -27,7 +27,7 @@ spring:
 # ========== 头像上传路径配置 ==========
 upload:
   # 头像存储根路径（根据你的项目路径调整，建议用绝对路径）
-  user-avatar-path: F:/毕设/新建文件夹/pet-backend/userphoto/
+  user-avatar-path: F:/毕设/新建文件夹/pet-backend/user-img/
   # 头像访问映射（前端通过http://localhost:8080/avatar/xxx.jpg访问）
   avatar-access-path: /avatar/
 

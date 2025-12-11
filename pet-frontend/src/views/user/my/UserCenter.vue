@@ -15,7 +15,7 @@
           {{ userInfo.isLogin ? userInfo.username : '暂未登录' }}
         </div>
         <button class="edit-btn" v-if="userInfo.isLogin" @click="handleEditClick">
-          <img src="@/assets/images/my-icon/编辑.svg" alt="编辑图标" class="edit-icon" />
+          <img src="@/assets/images/我的图标/编辑.svg" alt="编辑图标" class="edit-icon" />
         </button>
         <div class="privacy-tag" v-if="userInfo.isLogin">
           宠物信息访客可见
@@ -27,7 +27,7 @@
         <h3>待添加</h3>
         <div class="add-pet">
           <div class="add-icon">
-            <img src="@/assets/images/my-icon/添加.svg" alt="添加图标" class="add-icon-img" />
+            <img src="@/assets/images/我的图标/添加.svg" alt="添加图标" class="add-icon-img" />
           </div>
           <div class="add-desc">
             <p class="pet-status">暂无宠物信息</p>
@@ -44,23 +44,23 @@
         <h3>我的订单</h3>
         <div class="order-tabs">
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/my-icon/待生效.svg" alt="待生效" class="order-icon" />
+            <img src="@/assets/images/我的图标/待生效.svg" alt="待生效" class="order-icon" />
             <span>待生效</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/my-icon/待预约.svg" alt="待预约" class="order-icon" />
+            <img src="@/assets/images/我的图标/待预约.svg" alt="待预约" class="order-icon" />
             <span>待预约</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/my-icon/待发货.svg" alt="待发货" class="order-icon" />
+            <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
             <span>待发货</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/my-icon/待收货.svg" alt="待收货" class="order-icon" />
+            <img src="@/assets/images/我的图标/待收货.svg" alt="待收货" class="order-icon" />
             <span>待收货</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/my-icon/待评价.svg" alt="待评价" class="order-icon" />
+            <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
             <span>待评价</span>
           </div>
         </div>
@@ -78,7 +78,7 @@
             </button>
           </div>
           <div class="guarantee-icon">
-            <img src="@/assets/images/my-icon/保障.svg" alt="保障图标" />
+            <img src="@/assets/images/我的图标/保障.svg" alt="保障图标" />
           </div>
         </div>
       </div>
@@ -171,15 +171,15 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
-// 核心修改：导入原生axios，不再用封装的request
-import axios from 'axios'
 // 1. 引入Vue Router的useRouter方法
 import { useRouter } from 'vue-router'
+// 2. 导入统一封装的用户接口（不再用原生axios）
+import { login, register } from '@/api/user/index.js'
+// 4. 导入默认头像
 import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
-// 2. 创建router实例
+
+// 创建router实例
 const router = useRouter()
-// ========== default-avatar+后端地址 ==========
-const baseUrl = 'http://localhost:8080' // 和UserSetting保持一致
 
 // 登录状态管理
 const userInfo = ref({
@@ -217,78 +217,72 @@ onMounted(() => {
   checkLoginStatus()
 })
 
-// 检查登录状态
+// 检查登录状态（使用全局配置拼接头像URL）
 const checkLoginStatus = () => {
   const userData = localStorage.getItem('userData')
   if (userData) {
     const parsed = JSON.parse(userData)
-    // 拼接完整头像URL：baseUrl/avatar/文件名
-    const avatarUrl = parsed.avatarUrl
-      ? `${baseUrl}/avatar/${parsed.avatarUrl}`
-      : defaultAvatar
-
+    const avatarUrl = parsed.avatarUrl || defaultAvatar
     userInfo.value = {
       isLogin: true,
       username: parsed.username || `宝友${parsed.userId?.toString().slice(-4)}`,
       userId: parsed.userId,
-      avatarUrl: avatarUrl // 赋值完整URL
+      avatarUrl: avatarUrl
     }
   }
 }
 
-// 使用原生Axios，手动配置请求
+// 登录/注册加载状态（防止重复点击）
+const isLoading = ref(false)
+
+// 使用统一封装的API请求
 const handleAuthSubmit = async () => {
+  // 防止重复点击
+  if (isLoading.value) return
   try {
+    // 开启加载状态
+    isLoading.value = true
     clearError()
-    const baseURL = 'http://localhost:8080'
-    let url = ''
-    let data = {}
+    let res
 
     if (activeTab.value === 'login') {
-      url = `${baseURL}/user/login`
-      data = { email: loginForm.email, password: loginForm.password }
+      // 调用封装的login接口
+      res = await login({
+        email: loginForm.email,
+        password: loginForm.password
+      })
     } else {
-      url = `${baseURL}/user/register`
-      data = { username: registerForm.username, email: registerForm.email, password: registerForm.password }
+      // 调用封装的register接口
+      res = await register({
+        username: registerForm.username,
+        email: registerForm.email,
+        password: registerForm.password
+      })
     }
 
-    const response = await axios({
-      method: 'post',
-      url: url,
-      data: data,
-      headers: {
-        'Content-Type': 'application/json;charset=utf-8'
-      },
-      transformRequest: [(data) => JSON.stringify(data)],
-      transformResponse: [(data) => JSON.parse(data)]
-    })
+    const result = res.data || {}
+    console.log('后端原始响应：', result)
 
-    const res = response.data || {}
-    console.log('后端原始响应：', res)
-
-    if (res.code === 200) {
+    if (result.code === 200) {
       if (activeTab.value === 'login') {
-        // 登录成功：拼接头像URL后再存入缓存
-        const userData = res.data
-        // 关键：给用户数据补充完整的avatarUrl
-        userData.avatarUrl = userData.avatarUrl
-          ? `${baseUrl}/avatar/${userData.avatarUrl}`
-          : defaultAvatar
+        // 登录成功：使用全局配置拼接头像URL
+        const userData = result.data
+        userData.avatarUrl = userData.avatarUrl || defaultAvatar
         localStorage.setItem('userData', JSON.stringify(userData))
         dialogVisible.value = false
         ElMessage.success('登录成功！')
         // 刷新页面后重新初始化头像
         window.location.reload()
       } else {
-        ElMessage.success(res.msg || '注册成功，请登录！')
+        ElMessage.success(result.msg || '注册成功，请登录！')
         activeTab.value = 'login'
         registerForm.username = ''
         registerForm.email = ''
         registerForm.password = ''
       }
     } else {
-      errorMsg.value = res.msg || (activeTab.value === 'login' ? '登录失败！' : '注册失败！')
-      if (res.code === 400 || res.code === 409) {
+      errorMsg.value = result.msg || (activeTab.value === 'login' ? '登录失败！' : '注册失败！')
+      if (result.code === 400 || result.code === 409) {
         const emailInput = document.querySelector(`.${activeTab.value}-form input[placeholder="请输入邮箱"]`)
         if (emailInput) emailInput.focus()
       }
@@ -304,6 +298,9 @@ const handleAuthSubmit = async () => {
 
     const emailInput = document.querySelector(`.${activeTab.value}-form input[placeholder="请输入邮箱"]`)
     if (emailInput) emailInput.focus()
+  } finally {
+    // 无论成功/失败，都关闭加载状态
+    isLoading.value = false
   }
 }
 
@@ -344,7 +341,20 @@ const handleAddPetClick = () => {
     dialogVisible.value = true
     return
   }
-  ElMessage.info('跳转到添加宠物页面')
+  try {
+    // 跳转时传递userId（两种方式可选）
+    router.push({
+      path: '/pet-id-card',
+      // 方式1：query传参（URL可见，刷新不丢失）【推荐】
+      query: {
+        userId: userInfo.value.userId
+      }
+    })
+    ElMessage.success('正在前往添加宠物页面')
+  } catch (err) {
+    console.error('路由跳转失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  }
 }
 
 const handleOrderTabClick = () => {
@@ -373,7 +383,7 @@ const handleGuaranteeClick = () => {
   margin: 0 auto;
   padding: 20px 15px;
   box-sizing: border-box;
-  background: url('@/assets/images/my-icon/背景图.jpg') no-repeat center center;
+  background: url('@/assets/images/我的图标/背景图.jpg') no-repeat center center;
   background-size: cover;
   min-height: 100vh;
 }

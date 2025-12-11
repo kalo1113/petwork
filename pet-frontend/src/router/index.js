@@ -32,6 +32,11 @@ const routes = [
     path: '/user/setting', // 需与跳转的path一致
     name: 'UserSetting', // 若使用命名路由，name需匹配
     component: () => import('../views/user/my/UserSetting.vue') // 路径需正确
+  },
+  {
+    path: '/pet-id-card', // 路由路径
+    name: 'PetIDCard', // 路由名称
+    component: () => import('../views/user/PetIDCard.vue') // 路径需正确
   }
 ]
 

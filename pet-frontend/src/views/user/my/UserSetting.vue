@@ -1,19 +1,17 @@
 <template>
   <div class="user-setting-container">
     <!-- 顶部导航栏 -->
-  <div class="setting-header">
-  <!-- 原有返回图标 -->
-  <i class="el-icon-arrow-left back-icon" @click="handleBack"></i>
-  <!-- 新增返回上一页按钮 -->
-  <el-button
-    type="text"
-    class="back-btn"
-    @click="handleBack"
-    icon="el-icon-arrow-left">
-  &lt;
-  </el-button>
-  <h3 class="setting-title">个人设置</h3>
-</div>
+    <div class="setting-header">
+      <el-button
+        type="text"
+        class="back-btn"
+        @click="handleBack"
+        icon="el-icon-arrow-left"
+      >
+        &lt;
+      </el-button>
+      <h3 class="setting-title">个人设置</h3>
+    </div>
 
     <!-- 主要内容区 -->
     <div class="setting-content">
@@ -38,38 +36,44 @@
         <div class="item-label">昵称</div>
         <div class="nickname-wrap">
           <span class="nickname-text">{{ userInfo.username }}</span>
-          <el-button type="text" class="edit-btn" @click="openNicknameEdit">编辑</el-button>
+          <!-- 修正后 -->
+<el-button
+  type="text"
+  class="edit-btn"
+  @click.stop="openNicknameEdit"
+>
+  编辑
+</el-button>
         </div>
       </div>
 
       <!-- 3. 修改密码 -->
       <div class="setting-item pwd-item" @click="openPwdEdit">
         <div class="item-label">修改密码</div>
-        <i class="el-icon-arrow-right arrow-icon"></i>
       </div>
 
       <!-- 4. 切换账号 -->
       <div class="setting-item switch-account-item" @click="openSwitchAccount">
         <div class="item-label">切换账号</div>
-        <i class="el-icon-arrow-right arrow-icon"></i>
       </div>
 
       <!-- 5. 退出登录 -->
       <div class="setting-item logout-item" @click="handleLogout">
         <div class="item-label logout-text">退出登录</div>
-        <i class="el-icon-arrow-right arrow-icon"></i>
       </div>
     </div>
 
     <!-- 昵称编辑弹窗 -->
-    <el-dialog
-      v-model="nicknameDialogVisible"
-      title="修改昵称"
-      width="30%"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="nicknameForm" label-width="60px">
-        <el-form-item label="昵称">
+<el-dialog
+  key="nickname-dialog"
+  v-model="nicknameDialogVisible"
+  title="修改昵称"
+  width="30%"
+  :close-on-click-modal="false"
+  :append-to-body="true"
+>
+      <el-form :model="nicknameForm" label-width="60px" :rules="nicknameRules" ref="nicknameFormRef">
+        <el-form-item label="昵称" prop="username">
           <el-input
             v-model="nicknameForm.username"
             placeholder="请输入新昵称"
@@ -91,15 +95,15 @@
       width="30%"
       :close-on-click-modal="false"
     >
-      <el-form :model="pwdForm" label-width="80px">
-        <el-form-item label="原密码">
+      <el-form :model="pwdForm" label-width="80px" :rules="pwdRules" ref="pwdFormRef">
+        <el-form-item label="原密码" prop="oldPwd">
           <el-input
             v-model="pwdForm.oldPwd"
             type="password"
             placeholder="请输入原密码"
           ></el-input>
         </el-form-item>
-        <el-form-item label="新密码">
+        <el-form-item label="新密码" prop="newPwd">
           <el-input
             v-model="pwdForm.newPwd"
             type="password"
@@ -108,7 +112,7 @@
             show-word-limit
           ></el-input>
         </el-form-item>
-        <el-form-item label="确认密码">
+        <el-form-item label="确认密码" prop="confirmPwd">
           <el-input
             v-model="pwdForm.confirmPwd"
             type="password"
@@ -152,7 +156,7 @@
 
       <!-- 添加账号 -->
       <div class="add-account" @click="handleAddAccount">
-        <i class="el-icon-plus"></i>
+
         <span>添加账号</span>
       </div>
 
@@ -168,14 +172,14 @@
       width="30%"
       :close-on-click-modal="false"
     >
-      <el-form :model="loginForm" label-width="60px">
-        <el-form-item label="邮箱">
+      <el-form :model="loginForm" label-width="60px" :rules="loginRules" ref="loginFormRef">
+        <el-form-item label="邮箱" prop="email">
           <el-input
             v-model="loginForm.email"
             placeholder="请输入登录邮箱"
           ></el-input>
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item label="密码" prop="password">
           <el-input
             v-model="loginForm.password"
             type="password"
@@ -193,19 +197,18 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElLoading } from 'element-plus'
+import { ElMessage, ElLoading, ElForm, ElDialog, ElButton, ElFormItem, ElInput } from 'element-plus'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
+// 导入全局配置（统一管理baseURL）
+import { BASE_URL } from '@/config/index.js'
+
 // 初始化路由实例
 const router = useRouter()
 
-// ========== 核心配置 ==========
-// 后端接口基础地址（根据实际部署地址修改）
-const baseUrl = 'http://localhost:8080'
-
 // ========== 状态管理 ==========
-// 用户信息（匹配后端User实体的avatarUrl字段）
+// 用户信息
 const userInfo = ref({
   isLogin: false,
   userId: '',
@@ -214,7 +217,7 @@ const userInfo = ref({
   avatarUrl: ''
 })
 
-// 其他账号列表（从本地缓存读取）
+// 其他账号列表
 const otherAccounts = ref([])
 
 // 弹窗控制
@@ -222,6 +225,11 @@ const nicknameDialogVisible = ref(false)
 const pwdDialogVisible = ref(false)
 const switchAccountDialogVisible = ref(false)
 const loginDialogVisible = ref(false)
+
+// 表单Ref（用于校验）
+const nicknameFormRef = ref(null)
+const pwdFormRef = ref(null)
+const loginFormRef = ref(null)
 
 // 表单数据
 const nicknameForm = reactive({
@@ -237,11 +245,48 @@ const loginForm = reactive({
   password: ''
 })
 
+// 表单校验规则
+const nicknameRules = ref({
+  username: [
+    { required: true, message: '请输入昵称', trigger: 'blur' },
+    { min: 2, max: 10, message: '昵称长度为2-10个字符', trigger: 'blur' }
+  ]
+})
+const pwdRules = ref({
+  oldPwd: [
+    { required: true, message: '请输入原密码', trigger: 'blur' }
+  ],
+  newPwd: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '新密码长度不少于6位', trigger: 'blur' }
+  ],
+  confirmPwd: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value !== pwdForm.newPwd) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ]
+})
+const loginRules = ref({
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' }
+  ]
+})
+
 // ========== 生命周期 ==========
 onMounted(() => {
-  // 从本地缓存加载用户信息
   initUserInfo()
-  // 加载其他账号列表
   initOtherAccounts()
 })
 
@@ -256,10 +301,10 @@ const initUserInfo = () => {
       userId: parsed.userId,
       username: parsed.username,
       email: parsed.email,
-      // 若缓存中的avatarUrl不完整，重新拼接
-      avatarUrl: parsed.avatarUrl?.startsWith('http')
-        ? parsed.avatarUrl
-        : `${baseUrl}/avatar/${parsed.avatarUrl || ''}`
+      // 拼接完整头像URL（兼容后端返回的文件名）
+      avatarUrl: parsed.avatarUrl
+        ? (parsed.avatarUrl.startsWith('http') ? parsed.avatarUrl : `${BASE_URL}/avatar/${encodeURIComponent(parsed.avatarUrl)}`)
+        : defaultAvatar
     }
     nicknameForm.username = userInfo.value.username
   }
@@ -274,18 +319,15 @@ const initOtherAccounts = () => {
 }
 
 // ========== 事件处理 ==========
-/** 返回上一页（路由跳转） */
+/** 返回上一页 */
 const handleBack = () => {
-// 直接跳转到/user/my
-  router.push('/my').then(() => {
-
-  }).catch(err => {
+  router.push('/my').catch(err => {
     console.error('跳转个人中心失败：', err)
     ElMessage.error('返回失败，请重试')
   })
 }
 
-/** 头像上传处理 */
+/** 头像上传处理（适配中文文件名） */
 const handleAvatarUpload = async (e) => {
   const file = e.target.files[0]
   if (!file) return
@@ -307,25 +349,27 @@ const handleAvatarUpload = async (e) => {
   })
 
   try {
-    // 3. 构建表单数据
+    // 3. 构建表单数据（保留原始文件名）
     const formData = new FormData()
     formData.append('file', file)
     formData.append('userId', userInfo.value.userId)
 
     // 4. 调用后端接口
-    const res = await axios.post(`${baseUrl}/user/uploadAvatar`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+    const res = await axios.post(`${BASE_URL}/user/uploadAvatar`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // 允许中文文件名（避免后端接收乱码）
+      transformRequest: [(data) => data]
     })
 
-    // 5. 处理响应
+    // 5. 处理响应（核心修复：直接使用后端返回的完整URL）
     loading.close()
     if (res.data.code === 200) {
-      // 拼接完整头像URL
-      userInfo.value.avatarUrl = `${baseUrl}/avatar/${res.data.data}`
-      // 更新本地缓存
+      // 后端返回的是完整可访问的URL，直接赋值
+      userInfo.value.avatarUrl = res.data.data
+      // 更新本地缓存：存完整URL，而非文件名
       localStorage.setItem('userData', JSON.stringify({
         ...JSON.parse(localStorage.getItem('userData')),
-        avatarUrl: userInfo.value.avatarUrl
+        avatarUrl: res.data.data // 存完整URL
       }))
       ElMessage.success('头像上传成功')
     } else {
@@ -340,18 +384,25 @@ const handleAvatarUpload = async (e) => {
 
 /** 打开昵称编辑弹窗 */
 const openNicknameEdit = () => {
-  nicknameForm.username = userInfo.value.username
-  nicknameDialogVisible.value = true
+  console.log('点击编辑，当前userInfo：', userInfo.value)
+  console.log('弹窗初始状态：', nicknameDialogVisible.value)
+  // 1. 强制赋值（避免响应式失效）
+  nicknameForm.username = userInfo.value.username || '默认昵称'
+  // 2. 异步触发（解决Element Plus弹窗渲染延迟）
+  setTimeout(() => {
+    nicknameDialogVisible.value = true
+    console.log('弹窗赋值后状态：', nicknameDialogVisible.value)
+  }, 0)
 }
 
 /** 保存昵称修改 */
 const saveNickname = async () => {
-  if (!nicknameForm.username.trim()) {
-    return ElMessage.warning('请输入有效昵称')
-  }
+  // 表单校验
+  const valid = await nicknameFormRef.value.validate()
+  if (!valid) return
 
   try {
-    const res = await axios.post(`${baseUrl}/user/updateNickname`, {
+    const res = await axios.post(`${BASE_URL}/user/updateNickname`, {
       userId: userInfo.value.userId,
       username: nicknameForm.username
     })
@@ -385,18 +436,11 @@ const openPwdEdit = () => {
 /** 保存密码修改 */
 const savePassword = async () => {
   // 表单校验
-  if (!pwdForm.oldPwd || !pwdForm.newPwd || !pwdForm.confirmPwd) {
-    return ElMessage.warning('请填写完整密码信息')
-  }
-  if (pwdForm.newPwd !== pwdForm.confirmPwd) {
-    return ElMessage.warning('两次输入的新密码不一致')
-  }
-  if (pwdForm.newPwd.length < 6) {
-    return ElMessage.warning('新密码长度不能少于6位')
-  }
+  const valid = await pwdFormRef.value.validate()
+  if (!valid) return
 
   try {
-    const res = await axios.post(`${baseUrl}/user/updatePassword`, {
+    const res = await axios.post(`${BASE_URL}/user/updatePassword`, {
       userId: userInfo.value.userId,
       oldPassword: pwdForm.oldPwd,
       newPassword: pwdForm.newPwd
@@ -407,11 +451,11 @@ const savePassword = async () => {
       ElMessage.success('密码修改成功，请重新登录')
       handleLogout()
     } else {
-      ElMessage.error(res.data.msg || '密码修改失败')
+      ElMessage.error(res.data.msg || '密码修改失败（原密码错误）')
     }
   } catch (err) {
     console.error('密码修改失败：', err)
-    ElMessage.error('密码修改失败，原密码错误或系统异常')
+    ElMessage.error('密码修改失败，系统异常')
   }
 }
 
@@ -428,7 +472,9 @@ const switchToAccount = (account) => {
     userId: account.userId,
     username: account.username,
     email: account.email,
-    avatarUrl: account.avatarUrl || ''
+    avatarUrl: account.avatarUrl
+      ? `${BASE_URL}/avatar/${encodeURIComponent(account.avatarUrl)}`
+      : defaultAvatar
   }
   switchAccountDialogVisible.value = false
   ElMessage.success(`已切换到账号：${account.username}`)
@@ -440,23 +486,25 @@ const handleAddAccount = () => {
   switchAccountDialogVisible.value = false
   loginDialogVisible.value = true
 }
+
 /** 登录（添加账号） */
 const handleLogin = async () => {
-  if (!loginForm.email || !loginForm.password) {
-    return ElMessage.warning('请填写邮箱和密码')
-  }
+  // 表单校验
+  const valid = await loginFormRef.value.validate()
+  if (!valid) return
 
   try {
-    const res = await axios.post(`${baseUrl}/user/login`, {
+    const res = await axios.post(`${BASE_URL}/user/login`, {
       email: loginForm.email,
       password: loginForm.password
     })
 
     if (res.data.code === 200) {
       const newAccount = res.data.data
+      // 处理新账号的头像URL
       newAccount.avatarUrl = newAccount.avatarUrl
-        ? `${baseUrl}/avatar/${newAccount.avatarUrl}`
-        : defaultAvatar
+        ? newAccount.avatarUrl
+        : ''
 
       // 保存到账号列表
       const accountList = JSON.parse(localStorage.getItem('accountList') || '[]')
@@ -468,15 +516,14 @@ const handleLogin = async () => {
       localStorage.setItem('userData', JSON.stringify(newAccount))
       loginDialogVisible.value = false
       ElMessage.success('登录成功')
-      // 修复：移除window.location.reload()，改用路由跳转+重新初始化
       router.push('/my')
       initUserInfo()
     } else {
-      ElMessage.error(res.data.msg || '登录失败')
+      ElMessage.error(res.data.msg || '登录失败，邮箱或密码错误')
     }
   } catch (err) {
     console.error('登录失败：', err)
-    ElMessage.error('登录失败，邮箱或密码错误')
+    ElMessage.error('登录失败，网络异常')
   }
 }
 
@@ -491,9 +538,8 @@ const handleLogout = () => {
     avatarUrl: ''
   }
   ElMessage.success('已退出登录')
-  // 退出后强制跳转到UserCenter页面
   router.push('/my').then(() => {
-    window.location.reload() // 刷新页面确保状态更新
+    window.location.reload()
   })
 }
 </script>
@@ -517,17 +563,6 @@ const handleLogout = () => {
   margin-bottom: 30px;
   border-bottom: 1px solid #eee;
 }
-.back-icon {
-  font-size: 20px;
-  cursor: pointer;
-  color: #666;
-  transition: color 0.2s;
-}
-.back-icon:hover {
-  color: #2196f3;
-}
-
-/* 返回按钮样式 */
 .back-btn {
   font-size: 20px;
   color: #666;
@@ -537,7 +572,6 @@ const handleLogout = () => {
   color: #2196f3;
   background-color: #f5f8ff;
 }
-
 .setting-title {
   font-size: 18px;
   font-weight: 600;
