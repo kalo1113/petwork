@@ -13,7 +13,7 @@ public class ResourceConfig implements WebMvcConfigurer {
         // 映射前端访问路径 /pet-images/** 到本地图片存储目录
         registry.addResourceHandler("/pet-images/**")
                 // 注意：路径末尾必须加 /，且使用 file: 协议
-                .addResourceLocations("file:F:/毕设/新建文件夹/pet-backend/petphoto/");
+                .addResourceLocations("file:F:/毕设/新建文件夹/pet-backend/pet-photo/");
         // 商品图片映射：前端访问路径 /product-images/** 到本地商品图片存储目录
         registry.addResourceHandler("/product-images/**")
                 .addResourceLocations("file:F:/毕设/新建文件夹/pet-backend/productimg/");

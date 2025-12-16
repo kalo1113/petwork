@@ -33,15 +33,15 @@ public class Pet {
     @Pattern(regexp = "^(公|母)$", message = "宠物性别只能是“公”或“母”")
     private String petGender; // 宠物性别，非空（公/母）
 
+    // 修复：允许"未知"选项，匹配前端
     @NotBlank(message = "绝育状态不能为空")
-    @Pattern(regexp = "^(是|否)$", message = "绝育状态只能是“是”或“否”")
-    private String isSterilized; // 是否绝育，非空（是/否）
+    @Pattern(regexp = "^(是|否|未知)$", message = "绝育状态只能是“是”、“否”或“未知”")
+    private String isSterilized;
 
-    @NotBlank(message = "正脸照不能为空")
-    private String petFacePhoto; // 正脸照URL，非空
+    // 修复：照片URL改为非必填（创建宠物时无照片，后续上传后关联）
+    private String petFacePhoto;
 
-    @NotBlank(message = "全身照不能为空")
-    private String petBodyPhoto; // 全身照URL，非空
+    private String petBodyPhoto;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime; // 插入时自动填充
