@@ -138,7 +138,6 @@ public class PetController {
             return Result.fail("上传失败：" + e.getMessage());
         }
     }
-
     /**
      * 【新增】兼容前端的 /pet/list 接口（query传参）
      * 前端调用 /pet/list?userId=1 时，转发到原有逻辑
@@ -148,9 +147,8 @@ public class PetController {
         // 直接复用原有路径参数的逻辑
         return getPetListByUserId(userId);
     }
-
     /**
-     * 2. 【核心】根据用户ID查询所有宠物（登录用户专属）
+     * 3. 【核心】根据用户ID查询所有宠物（登录用户专属）
      * 支持两种调用方式：
      * 1. 路径参数：/pet/user/{userId}
      * 2. Query参数：/pet/list?userId={userId}（兼容前端）
@@ -180,7 +178,66 @@ public class PetController {
     }
 
     /**
-     * 3. 关联宠物照片（更新宠物的照片URL）
+     * 4. 【新增】根据宠物ID查询单个宠物信息
+     * 用于编辑宠物信息时回显数据
+     * @param petId 宠物ID（路径参数）
+     * @return 宠物详细信息
+     */
+    @GetMapping("/info/{petId}")
+    public Result<Pet> getPetInfoById(@PathVariable Integer petId) {
+        log.info("开始查询宠物信息，宠物ID：{}", petId);
+
+        // 1. 参数合法性校验
+        if (petId == null || petId <= 0) {
+            log.warn("查询宠物信息失败：宠物ID不合法，petId={}", petId);
+            return Result.fail("查询失败：宠物ID必须为正整数");
+        }
+
+        // 2. 根据ID查询宠物
+        Pet pet = petService.getById(petId);
+        if (pet == null) {
+            log.warn("查询宠物信息失败：宠物ID不存在，petId={}", petId);
+            return Result.fail("查询失败：该宠物ID不存在");
+        }
+
+        // 3. 返回查询结果
+        log.info("查询宠物信息成功，宠物ID：{}，信息：{}", petId, pet);
+        return Result.success(pet, "查询宠物信息成功");
+    }
+
+    /**
+     * 5. 【新增】更新宠物基础信息接口
+     * 用于编辑宠物信息时提交修改
+     * @param pet 宠物修改信息（必须包含petId）
+     * @return 更新结果
+     */
+    @PutMapping("/update")
+    public Result<Void> updatePetInfo(@Valid @RequestBody Pet pet) {
+        log.info("开始更新宠物信息，接收参数：{}", pet);
+
+        // 1. 参数合法性校验
+        Integer petId = pet.getPetId();
+        if (petId == null || petId <= 0) {
+            log.warn("更新宠物信息失败：宠物ID不合法，petId={}", petId);
+            return Result.fail("更新失败：宠物ID必须为正整数");
+        }
+
+        // 3. 填充更新时间
+        pet.setUpdateTime(LocalDateTime.now());
+
+        // 4. 执行更新（仅更新非空字段）
+        boolean success = petService.updateById(pet);
+        if (success) {
+            log.info("更新宠物信息成功，宠物ID：{}", petId);
+            return Result.success("更新宠物信息成功");
+        } else {
+            log.error("更新宠物信息失败，参数：{}", pet);
+            return Result.fail("更新宠物信息失败");
+        }
+    }
+
+    /**
+     * 6. 关联宠物照片（更新宠物的照片URL）
      * @param photoDTO 照片关联参数（petId + photoType + imgUrl）
      * @return 关联结果
      */

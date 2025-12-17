@@ -83,6 +83,20 @@ export const addPet = (data) => {
   })
 }
 
+// 【新增】根据宠物ID查询宠物信息（编辑模式回显）
+export const getPetInfoById = (petId) => {
+  return petAxios.get(`/pet/info/${petId}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 【新增】更新宠物基础信息（编辑模式提交）
+export const updatePetInfo = (data) => {
+  return petAxios.put('/pet/update', data, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
 // 宠物图片上传（关键：适配multipart/form-data）
 export const uploadPetImg = (formData) => {
   return petAxios.post('/pet/upload', formData, {

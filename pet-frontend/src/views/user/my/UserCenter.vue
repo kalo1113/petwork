@@ -80,7 +80,7 @@
               </div>
               <div class="pet-desc">
                 {{ currentPet.breed }} {{ currentPet.age }}
-                <img src="@/assets/images/我的图标/编辑.svg" alt="编辑图标" />
+                <img src="@/assets/images/我的图标/编辑.svg" alt="编辑图标" @click="handleEditPetClick(currentPet.petId)" />
               </div>
               <p class="pet-id">No.{{ currentPet.uniqueId }}</p>
             </div>
@@ -392,6 +392,32 @@ const handleEditClick = () => {
     ElMessage.error('跳转失败，请检查路由配置')
   })
 }
+
+// 编辑宠物：跳转至pet-id-card并携带petId（标识编辑模式）
+const handleEditPetClick = (petId) => {
+  // 1. 校验登录状态
+  if (!userInfo.value.isLogin) {
+    dialogVisible.value = true
+    return
+  }
+
+  try {
+    // 2. 跳转至同一个路由，新增petId参数（区分添加/编辑）
+    router.push({
+      path: '/pet-id-card',
+      query: {
+        userId: userInfo.value.userId, // 保留用户ID
+        petId: petId, // 传递要编辑的宠物ID
+        type: 'edit' // 可选：显式标识是编辑模式
+      }
+    })
+    ElMessage.success('正在前往编辑宠物信息页面')
+  } catch (err) {
+    console.error('编辑宠物路由跳转失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  }
+}
+
 const handleAddPetClick = () => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
@@ -425,7 +451,7 @@ const handleGuaranteeClick = () => {
 /* 原有样式保持不变 */
 .center-container {
   width: 100%;
-  max-width: 1000px;
+  max-width: 1200px;
   min-width: 320px;
   margin: 0 auto;
   padding: 20px 15px;
@@ -955,6 +981,7 @@ const handleGuaranteeClick = () => {
 .pet-desc img{
 width:15px;
 margin-left: 10px;
+cursor: pointer;
 }
 .pet-id {
   font-size: 12px;

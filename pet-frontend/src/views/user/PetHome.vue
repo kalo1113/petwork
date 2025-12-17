@@ -422,7 +422,7 @@ onUnmounted(() => {
   padding: 16px;
   color: #fff;
   background: linear-gradient(transparent, rgba(0,0,0,0.7));
-  width: calc(100% - 32px);
+  width: calc(100%);
 }
 
 .highlight-text {

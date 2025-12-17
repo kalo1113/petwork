@@ -9,7 +9,7 @@
 
     <!-- 顶部标题区 -->
     <div class="header">
-      <h1>宠物身份证</h1>
+      <h1>{{ isEditMode ? '编辑宠物身份证' : '宠物身份证' }}</h1>
       <p>宠物鼻纹识别技术</p>
     </div>
 
@@ -58,7 +58,7 @@
 
     <!-- 核心表单 -->
     <div class="form-wrapper">
-      <p class="form-title">请完善宠物信息</p>
+      <p class="form-title">{{ isEditMode ? '修改宠物信息' : '请完善宠物信息' }}</p>
 
       <!-- 宠物种类 -->
       <div class="form-row">
@@ -136,11 +136,10 @@
       <!-- 照片上传 -->
       <div class="form-row photo-row">
         <span class="form-label">宠物照片</span>
-        <span class="form-label">示例①</span>
         <div class="photo-upload-group">
           <!-- 全身照 -->
           <div class="photo-upload">
-            <img v-if="previewUrls.body" :src="previewUrls.body" class="upload-img" />
+            <img v-if="previewUrls.body || petForm.petBodyPhoto" :src="previewUrls.body || petForm.petBodyPhoto" class="upload-img" />
             <div v-else class="upload-placeholder">
               <span class="plus-icon">+</span>
             </div>
@@ -155,7 +154,7 @@
           </div>
           <!-- 正脸照 -->
           <div class="photo-upload">
-            <img v-if="previewUrls.face" :src="previewUrls.face" class="upload-img" />
+            <img v-if="previewUrls.face || petForm.petFacePhoto" :src="previewUrls.face || petForm.petFacePhoto" class="upload-img" />
             <div v-else class="upload-placeholder">
               <span class="plus-icon">+</span>
             </div>
@@ -171,8 +170,8 @@
         </div>
       </div>
 
-      <!-- 协议勾选 -->
-      <div class="agreement-row">
+      <!-- 协议勾选（编辑模式隐藏） -->
+      <div class="agreement-row" v-if="!isEditMode">
         <label class="checkbox-item">
           <input
             type="checkbox"
@@ -183,13 +182,13 @@
         </label>
       </div>
 
-      <!-- 提交按钮 -->
+      <!-- 提交按钮（动态文字） -->
       <button
         class="submit-btn"
         @click="completePetInfo"
         :disabled="!canSubmit || isSubmitting"
       >
-        {{ isSubmitting ? '提交中...' : '领取宠物身份证' }}
+        {{ isSubmitting ? '提交中...' : (isEditMode ? '修改宠物身份证' : '领取宠物身份证') }}
       </button>
     </div>
   </div>
@@ -198,9 +197,9 @@
 <script setup>
 import { reactive, ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-// 导入request工具（核心：适配后端接口）
-import request from '@/utils/request'
-// 导入图片（路径请根据实际调整）
+// 导入api方法
+import { addPet, uploadPetImg, updatePetPhoto, getPetInfoById, updatePetInfo } from '@/api/user/index.js'
+// 导入图片
 import featureIcon1 from '@/assets/images/我的图标/专属身份id.svg'
 import featureIcon2 from '@/assets/images/我的图标/宠物防丢保护.svg'
 import featureIcon3 from '@/assets/images/我的图标/千元医疗保障.svg'
@@ -208,10 +207,9 @@ import petAvatarPlaceholder from '@/assets/images/我的图标/默认身份状�
 import catIcon from '@/assets/images/我的图标/小猫猫.svg'
 import dogIcon from '@/assets/images/我的图标/小狗狗.svg'
 
-// 消息提示（兼容Element Plus和原生alert）
+// 消息提示
 const showMessage = (type, msg) => {
   try {
-    // 优先使用Element Plus消息提示（如有引入）
     import('element-plus').then(({ ElMessage }) => {
       ElMessage({
         type: type,
@@ -220,7 +218,6 @@ const showMessage = (type, msg) => {
       })
     })
   } catch (e) {
-    // 降级为原生alert
     alert(`${type === 'success' ? '成功' : '错误'}：${msg}`)
   }
 }
@@ -232,7 +229,8 @@ const route = useRoute()
 // 状态管理
 const isSubmitting = ref(false)
 const isAgreed = ref(false)
-const petId = ref('') // 存储后端生成的宠物ID
+const petId = ref('')
+const isEditMode = ref(false) // 标识是否为编辑模式
 
 // 文件Ref
 const bodyFileRef = ref(null)
@@ -242,60 +240,89 @@ const faceFileRef = ref(null)
 const cacheFiles = ref({ face: null, body: null })
 const previewUrls = ref({ face: '', body: '' })
 
-// 表单数据（严格匹配后端Pet实体类字段）
+// 表单数据
 const petForm = reactive({
-  userId: '', // 用户ID（数值类型）
-  petName: '', // 宠物昵称
-  petBirthday: '', // 生日
-  petType: '', // 种类（猫/狗）
-  petGender: '', // 性别（公/母）
-  isSterilized: '', // 绝育状态（是/否/未知）
-  petFacePhoto: '', // 正脸照URL
-  petBodyPhoto: '' // 全身照URL
+  userId: '',
+  petName: '',
+  petBirthday: '',
+  petType: '',
+  petGender: '',
+  isSterilized: '',
+  petFacePhoto: '',
+  petBodyPhoto: ''
 })
 
-// 表单校验（严格匹配后端参数要求）
+// 表单校验（区分新增/编辑模式）
 const canSubmit = computed(() => {
   // 基础信息校验
   const basicValid = !!petForm.userId && !!petForm.petName && !!petForm.petType &&
                     !!petForm.petGender && !!petForm.petBirthday && !!petForm.isSterilized
-  // 照片校验
-  const photoValid = !!cacheFiles.value.face && !!cacheFiles.value.body
-  // 协议勾选 + 非提交中
-  return basicValid && photoValid && isAgreed.value && !isSubmitting.value
+  // 新增模式：需要照片 + 协议勾选
+  if (!isEditMode.value) {
+    const photoValid = !!cacheFiles.value.face && !!cacheFiles.value.body
+    return basicValid && photoValid && isAgreed.value && !isSubmitting.value
+  }
+  // 编辑模式：照片可选（有缓存文件 或 已有照片URL）
+  const photoValid = (!!cacheFiles.value.face || !!petForm.petFacePhoto) &&
+                     (!!cacheFiles.value.body || !!petForm.petBodyPhoto)
+  return basicValid && photoValid && !isSubmitting.value
 })
 
-// 页面挂载：初始化用户ID（转为数值类型，增加合法性校验）
-onMounted(() => {
-  // 从本地缓存/路由获取用户ID
+// 页面挂载：初始化用户ID + 判断编辑模式 + 拉取宠物信息
+onMounted(async () => {
+  // 1. 初始化用户ID
   let userId = localStorage.getItem('userId') || route.query.userId || '10001'
-  // 校验数值合法性，避免非数字导致后端报错
   userId = /^\d+$/.test(userId) ? Number(userId) : 10001
-  petForm.userId = userId // 关键：确保是数值类型
+  petForm.userId = userId
+
+  // 2. 判断是否为编辑模式（有petId参数 且 type=edit）
+  const queryPetId = route.query.petId
+  const queryType = route.query.type
+  if (queryPetId && queryType === 'edit') {
+    isEditMode.value = true
+    petId.value = queryPetId
+    // 3. 编辑模式：拉取宠物信息回显
+    try {
+      const res = await getPetInfoById(Number(queryPetId))
+      if (res.code === 200) {
+        const petData = res.data
+        // 回显基础信息
+        petForm.petName = petData.petName || ''
+        petForm.petBirthday = petData.petBirthday || ''
+        petForm.petType = petData.petType || ''
+        petForm.petGender = petData.petGender || ''
+        petForm.isSterilized = petData.isSterilized || ''
+        petForm.petFacePhoto = petData.petFacePhoto || ''
+        petForm.petBodyPhoto = petData.petBodyPhoto || ''
+        // 照片预览（使用已有URL）
+        previewUrls.value.face = petData.petFacePhoto || ''
+        previewUrls.value.body = petData.petBodyPhoto || ''
+        showMessage('success', '宠物信息加载成功')
+      }
+    } catch (err) {
+      console.error('拉取宠物信息失败：', err)
+      showMessage('error', '加载宠物信息失败，请返回重试')
+    }
+  }
 })
 
-// 文件选择回调：生成预览 + 缓存文件（增强兼容性）
+// 文件选择回调
 const handleFileChange = (e, type) => {
   const file = e.target.files[0]
   if (!file) return
-  // 增加日志，确认文件被捕获
   console.log(`选择${type}文件：`, file)
-  // 校验图片类型（匹配后端限制，增加IE兼容性）
+  // 图片类型校验
   const fileType = file.type
   const allowTypes = [
-    'image/jpg',
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/pjpeg', // IE兼容
-    'image/x-png' // IE兼容
+    'image/jpg', 'image/jpeg', 'image/png', 'image/gif',
+    'image/pjpeg', 'image/x-png'
   ]
   if (!allowTypes.includes(fileType)) {
     showMessage('error', '只能上传jpg、jpeg、png、gif格式图片！')
     return
   }
 
-  // 校验图片大小（后端限制10MB，前端限制5MB）
+  // 图片大小校验
   if (file.size > 5 * 1024 * 1024) {
     showMessage('error', '图片大小不能超过5MB！')
     return
@@ -304,108 +331,112 @@ const handleFileChange = (e, type) => {
   // 缓存文件 + 生成预览URL
   cacheFiles.value[type] = file
   previewUrls.value[type] = URL.createObjectURL(file)
-  // 清空input值，允许重复选择同一文件
   e.target.value = ''
 }
 
-// 新增独立上传函数
+// 独立上传函数
 const uploadPhoto = async (file, petIdVal, photoType) => {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('userId', petForm.userId)
   formData.append('petId', petIdVal)
   formData.append('photoType', photoType)
-  // 用setTimeout隔离，避免阻塞
   return new Promise((resolve) => {
     setTimeout(async () => {
-      const res = await request.post('/pet/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 30000
-      })
+      const res = await uploadPetImg(formData)
       resolve(res)
     }, 0)
   })
 }
 
-// 核心：提交表单（完全适配后端接口流程，增强错误处理）
+// 核心：提交表单（区分新增/编辑逻辑）
 const completePetInfo = async () => {
   isSubmitting.value = true
   try {
-    console.log('===== 开始提交 =====')
-    console.log('1. 表单数据：', petForm)
-    console.log('2. 缓存图片：', cacheFiles.value)
-    // ========== 步骤1：调用 /pet/add 创建宠物 ==========
-    const addRes = await request.post('/pet/add', {
-      userId: petForm.userId,
-      petName: petForm.petName,
-      petBirthday: petForm.petBirthday,
-      petType: petForm.petType,
-      petGender: petForm.petGender,
-      isSterilized: petForm.isSterilized
-    })
-    console.log('3. /pet/add 响应：', addRes)
+    let petIdVal = petId.value
+    console.log(`===== ${isEditMode.value ? '编辑' : '新增'}宠物开始 =====`)
+    // ========== 新增模式逻辑 ==========
+    if (!isEditMode.value) {
+      // 1. 创建宠物
+      const addRes = await addPet({
+        userId: petForm.userId,
+        petName: petForm.petName,
+        petBirthday: petForm.petBirthday,
+        petType: petForm.petType,
+        petGender: petForm.petGender,
+        isSterilized: petForm.isSterilized
+      })
+      if (addRes.code !== 200) throw new Error(`创建宠物失败：${addRes.msg}`)
+      petIdVal = addRes.data.petId
+      showMessage('success', `宠物ID生成成功：${petIdVal}`)
 
-    if (addRes.code !== 200) {
-      throw new Error(`创建宠物失败：${addRes.msg || '接口返回异常'}`)
+      // 2. 上传新照片（新增模式必须传）
+      if (cacheFiles.value.face) {
+        const faceRes = await uploadPhoto(cacheFiles.value.face, petIdVal, 'face')
+        if (faceRes.code !== 200) throw new Error(`正脸照上传失败：${faceRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'face', imgUrl: faceRes.data })
+      }
+      if (cacheFiles.value.body) {
+        const bodyRes = await uploadPhoto(cacheFiles.value.body, petIdVal, 'body')
+        if (bodyRes.code !== 200) throw new Error(`全身照上传失败：${bodyRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'body', imgUrl: bodyRes.data })
+      }
+      showMessage('success', `宠物身份证创建完成！ID：${petIdVal}`)
+    } else {
+    // ========== 编辑模式逻辑 ==========
+
+      // 1. 更新基础信息
+      const updateRes = await updatePetInfo({
+        petId: Number(petIdVal),
+        userId: petForm.userId,
+        petName: petForm.petName,
+        petBirthday: petForm.petBirthday,
+        petType: petForm.petType,
+        petGender: petForm.petGender,
+        isSterilized: petForm.isSterilized
+      })
+      if (updateRes.code !== 200) throw new Error(`更新宠物信息失败：${updateRes.msg}`)
+
+      // 2. 上传新照片（编辑模式可选，有新文件才传）
+      if (cacheFiles.value.face) {
+        const faceRes = await uploadPhoto(cacheFiles.value.face, petIdVal, 'face')
+        if (faceRes.code !== 200) throw new Error(`正脸照上传失败：${faceRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'face', imgUrl: faceRes.data })
+      }
+      if (cacheFiles.value.body) {
+        const bodyRes = await uploadPhoto(cacheFiles.value.body, petIdVal, 'body')
+        if (bodyRes.code !== 200) throw new Error(`全身照上传失败：${bodyRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'body', imgUrl: bodyRes.data })
+      }
+      showMessage('success', '宠物身份证修改完成！')
     }
-    const petIdVal = addRes.data.petId
-    showMessage('success', `宠物ID生成成功：${petIdVal}`)
-    console.log('4. 生成petId：', petIdVal)
-    // ========== 步骤2：校验缓存图片 ==========
-    if (!cacheFiles.value.face) throw new Error('请选择正脸照')
-    if (!cacheFiles.value.body) throw new Error('请选择全身照')
-    console.log('5. 图片缓存校验通过')
-    // ========== 步骤3：上传正脸照（用独立上传函数） ==========
-    const faceRes = await uploadPhoto(cacheFiles.value.face, petIdVal, 'face')
-    console.log('6. 正脸照上传响应：', faceRes)
-    if (faceRes.code !== 200) throw new Error(`正脸照上传失败：${faceRes.msg}`)
-    const faceUrl = faceRes.data
-    // ========== 步骤4：上传全身照（用独立上传函数） ==========
-    const bodyRes = await uploadPhoto(cacheFiles.value.body, petIdVal, 'body')
-    console.log('7. 全身照上传响应：', bodyRes)
-    if (bodyRes.code !== 200) throw new Error(`全身照上传失败：${bodyRes.msg}`)
-    const bodyUrl = bodyRes.data
-    // ========== 步骤5：关联图片到宠物 ==========
-    await request.put('/pet/update-photo', {
-      petId: petIdVal,
-      photoType: 'face',
-      imgUrl: faceUrl
-    })
-    await request.put('/pet/update-photo', {
-      petId: petIdVal,
-      photoType: 'body',
-      imgUrl: bodyUrl
-    })
-    console.log('8. 图片关联成功')
-    // ========== 步骤6：成功提示 + 跳转 ==========
-    showMessage('success', `宠物身份证创建完成！ID：${petIdVal}`)
+
+    // ========== 通用：跳转返回 ==========
     setTimeout(() => {
       router.go(-1)
     }, 1500)
   } catch (err) {
-    console.error('===== 提交失败 =====', err)
+    console.error(`===== ${isEditMode.value ? '编辑' : '新增'}宠物失败 =====`, err)
     showMessage('error', err.message || '提交失败，请重试')
   } finally {
     isSubmitting.value = false
-    // 清空缓存（避免重复上传）
     cacheFiles.value = { face: null, body: null }
     previewUrls.value = { face: '', body: '' }
   }
 }
 
-// 返回上一页（增加路由守卫兼容）
+// 返回上一页
 const handleBack = () => {
   if (router.hasRoute('/pet/list')) {
     router.push(route.query.redirect || '/pet/list')
   } else {
-    // 回退到上一页（兼容路由不存在的情况）
     router.go(-1)
   }
 }
 </script>
 
 <style scoped>
-/* 基础容器 */
+/* 原有样式不变，无需修改 */
 .pet-id-card-container {
   width: 100%;
   max-width: 1200px;
@@ -418,7 +449,6 @@ const handleBack = () => {
   margin: 0 auto;
 }
 
-/* 返回按钮 */
 .back-btn {
   font-size: 30px;
   border: none;
@@ -430,7 +460,6 @@ const handleBack = () => {
   padding: 0;
 }
 
-/* 顶部标题 */
 .header {
   text-align: center;
   margin-bottom: 20px;
@@ -448,7 +477,6 @@ const handleBack = () => {
   margin: 0;
 }
 
-/* 功能区 */
 .features {
   display: flex;
   justify-content: space-around;
@@ -474,7 +502,6 @@ const handleBack = () => {
   padding: 10px;
 }
 
-/* 宠物卡片 */
 .pet-card {
   display: flex;
   align-items: center;
@@ -520,7 +547,6 @@ const handleBack = () => {
   color: #455a64;
 }
 
-/* 表单包裹层 */
 .form-wrapper {
   background: rgba(255, 255, 255, 0.95);
   padding: 20px;
@@ -534,7 +560,6 @@ const handleBack = () => {
   margin: 0 0 15px;
 }
 
-/* 表单行 */
 .form-row {
   display: flex;
   align-items: center;
@@ -549,7 +574,6 @@ const handleBack = () => {
   flex-shrink: 0;
 }
 
-/* 单选组 */
 .radio-group {
   display: flex;
   gap: 20px;
@@ -575,7 +599,6 @@ const handleBack = () => {
   cursor: pointer;
 }
 
-/* 原生输入框 */
 .native-input {
   width: 100%;
   height: 32px;
@@ -591,7 +614,6 @@ const handleBack = () => {
   box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
 }
 
-/* 照片上传 */
 .photo-row {
   align-items: flex-start;
 }
@@ -653,7 +675,6 @@ const handleBack = () => {
   margin-top: 5px;
 }
 
-/* 协议勾选 */
 .agreement-row {
   margin-bottom: 20px;
   font-size: 12px;
@@ -671,7 +692,6 @@ const handleBack = () => {
   cursor: pointer;
 }
 
-/* 提交按钮 */
 .submit-btn {
   width: 100%;
   padding: 12px;
