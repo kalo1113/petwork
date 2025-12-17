@@ -67,9 +67,12 @@ export const getUserInfo = (userId) => {
   return userAxios.get(`/user/${userId}`)
 }
 
-// 获取用户的宠物列表
+// 前端 getPetListByUserId 接口修正
 export const getPetListByUserId = (userId) => {
-  return petAxios.get(`/pet/list?userId=${userId}`)
+  return petAxios.get('/pet/list', { // 确保URL以 / 开头
+    params: { userId: userId }, // 自动拼接参数，避免手动写?userId=4
+    headers: { 'Content-Type': 'application/json' }
+  })
 }
 
 // ===================== 宠物接口（补充缺失的核心接口） =====================
@@ -92,9 +95,4 @@ export const updatePetPhoto = (data) => {
   return petAxios.put('/pet/update-photo', data, {
     headers: { 'Content-Type': 'application/json' }
   })
-}
-
-// 获取宠物详情
-export const getPetInfo = (petId) => {
-  return petAxios.get(`/pet/${petId}`)
 }

@@ -20,86 +20,57 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 宠物管理控制器
+ * 提供宠物增删改查、照片上传、照片关联等接口
+ */
 @RestController
 @RequestMapping("/pet")
-@CrossOrigin // 新增跨域注解（前端跨域请求必备）
 public class PetController {
+    // 日志组件
     private static final Logger log = LoggerFactory.getLogger(PetController.class);
 
+    // 注入宠物服务
     @Autowired
     private PetService petService;
-    // 新增：读取宠物图片上传路径配置
+
+    // 从配置文件读取宠物照片上传根路径（application.yml 中配置 upload.pet-photo-path）
     @Value("${upload.pet-photo-path}")
     private String petPhotoPath;
-    // 1. 新增宠物接口：明确返回自增的petId
+
+    /**
+     * 1. 新增宠物接口
+     * @param pet 宠物信息（含用户ID、名称、生日等，不含自增petId）
+     * @return 新增后的宠物对象（含自增petId）
+     */
     @PostMapping("/add")
     public Result<Pet> addPet(@Valid @RequestBody Pet pet) {
-        log.info("接收宠物信息：{}", pet);
+        log.info("开始新增宠物，接收参数：{}", pet);
+        // 强制清空自增ID，由数据库生成
         pet.setPetId(null);
+        // 手动填充创建/更新时间（若未配置自动填充插件）
+        LocalDateTime now = LocalDateTime.now();
+        pet.setCreateTime(now);
+        pet.setUpdateTime(now);
+
         boolean success = petService.save(pet);
         if (success) {
-            log.info("新增宠物成功，自增ID：{}", pet.getPetId());
+            log.info("新增宠物成功，生成的宠物ID：{}", pet.getPetId());
             return Result.success(pet, "新增宠物成功");
         } else {
+            log.error("新增宠物失败，参数：{}", pet);
             return Result.fail("新增宠物失败");
         }
     }
 
-    // 2. 查询宠物列表（可选：建议也封装Result）
-    @GetMapping("/list")
-    public Result<List<Pet>> getPetList(
-            @RequestParam(required = false) Integer userId,
-            @RequestParam(required = false) String petType,
-            @RequestParam(required = false) String petGender,
-            @RequestParam(required = false) String isSterilized
-    ) {
-        QueryWrapper<Pet> queryWrapper = new QueryWrapper<>();
-        if (userId != null) queryWrapper.eq("user_id", userId);
-        if (petType != null) queryWrapper.eq("pet_type", petType);
-        if (petGender != null) queryWrapper.eq("pet_gender", petGender);
-        if (isSterilized != null) queryWrapper.eq("is_sterilized", isSterilized);
-        List<Pet> petList = petService.list(queryWrapper);
-        return Result.success(petList, "查询宠物列表成功");
-    }
-
-    // 3. 根据ID查询宠物详情（修复：封装Result，处理null情况）
-    @GetMapping("/{petId}")
-    public Result<Pet> getPetById(@PathVariable Integer petId) {
-        Pet pet = petService.getById(petId);
-        if (pet != null) {
-            return Result.success(pet, "查询宠物详情成功");
-        } else {
-            return Result.fail("宠物ID不存在");
-        }
-    }
-
-    // 4. 修改宠物信息（修复：返回Result，统一格式）
-    @PutMapping("/update")
-    public Result<Void> updatePet(@Valid @RequestBody Pet pet) {
-        if (pet.getPetId() == null) {
-            return Result.fail("修改失败：宠物ID不能为空");
-        }
-        pet.setUpdateTime(LocalDateTime.now());
-        boolean success = petService.updateById(pet);
-        if (success) {
-            return Result.success("修改成功");
-        } else {
-            return Result.fail("修改失败（宠物ID不存在）");
-        }
-    }
-
-    // 5. 删除宠物（修复：返回Result，统一格式）
-    @DeleteMapping("/{petId}")
-    public Result<Void> deletePet(@PathVariable Integer petId) {
-        boolean success = petService.removeById(petId);
-        if (success) {
-            return Result.success("删除成功");
-        } else {
-            return Result.fail("删除失败（宠物ID不存在）");
-        }
-    }
-
-    // 6. 宠物照片上传（修改：读取配置路径，替换硬编码）
+    /**
+     * 2. 宠物照片上传（支持正脸照/全身照）
+     * @param file      上传的图片文件
+     * @param userId    用户ID
+     * @param petId     宠物ID
+     * @param photoType 照片类型（face：正脸照，body：全身照）
+     * @return 图片访问URL
+     */
     @PostMapping("/upload")
     public Result<String> uploadPetImg(
             @RequestParam("file") MultipartFile file,
@@ -107,7 +78,10 @@ public class PetController {
             @RequestParam("petId") Integer petId,
             @RequestParam("photoType") String photoType
     ) {
-        // 严格校验数值类型参数
+        log.info("开始上传宠物照片，参数：userId={}, petId={}, photoType={}, 文件名={}",
+                userId, petId, photoType, file.getOriginalFilename());
+
+        // 1. 参数合法性校验
         if (userId == null || userId <= 0) {
             return Result.fail("上传失败：userId必须为正整数");
         }
@@ -121,88 +95,149 @@ public class PetController {
             return Result.fail("上传失败：照片类型仅支持face/body");
         }
 
+        // 2. 文件格式校验
         String originalFilename = file.getOriginalFilename();
         if (originalFilename == null || !originalFilename.contains(".")) {
-            return Result.fail("上传失败：文件格式错误");
+            return Result.fail("上传失败：文件格式错误（无后缀名）");
         }
         String fileExt = originalFilename.substring(originalFilename.lastIndexOf("."));
         if (!fileExt.matches("\\.(jpg|jpeg|png|gif)$")) {
             return Result.fail("上传失败：仅支持jpg、jpeg、png、gif格式图片");
         }
 
-        // 修改：使用配置的路径，替换硬编码
+        // 3. 确保上传目录存在
         File dir = new File(petPhotoPath);
         if (!dir.exists()) {
-            dir.mkdirs();
+            boolean mkdirSuccess = dir.mkdirs();
+            if (!mkdirSuccess) {
+                log.error("创建上传目录失败，路径：{}", petPhotoPath);
+                return Result.fail("上传失败：创建存储目录失败");
+            }
         }
 
+        // 4. 生成唯一文件名（避免重复）
         String uuid = UUID.randomUUID().toString().replace("-", "");
         String newFileName = String.format("%d_%d_%s_%s%s", userId, petId, photoType, uuid, fileExt);
-        File dest = new File(petPhotoPath + newFileName);
+        File dest = new File(petPhotoPath + File.separator + newFileName); // 兼容Windows/Linux路径分隔符
 
+        // 5. 写入文件
         try {
             file.transferTo(dest);
+            // 校验文件是否真的写入成功
+            if (!dest.exists() || dest.length() == 0) {
+                log.error("文件写入失败：目标文件为空，路径：{}", dest.getAbsolutePath());
+                return Result.fail("上传失败：文件写入异常");
+            }
+
+            // 6. 生成访问URL（需配置静态资源映射）
             String imgUrl = "/pet-images/" + newFileName;
-            log.info("图片上传成功：用户ID={}, 宠物ID={}, 类型={}, 路径={}", userId, petId, photoType, imgUrl);
+            log.info("图片上传成功，存储路径：{}，访问URL：{}", dest.getAbsolutePath(), imgUrl);
             return Result.success(imgUrl, "图片上传成功");
         } catch (IOException e) {
-            log.error("图片上传失败：用户ID={}, 宠物ID={}", userId, petId, e);
+            log.error("图片上传失败，用户ID：{}，宠物ID：{}", userId, petId, e);
             return Result.fail("上传失败：" + e.getMessage());
         }
     }
 
+    /**
+     * 【新增】兼容前端的 /pet/list 接口（query传参）
+     * 前端调用 /pet/list?userId=1 时，转发到原有逻辑
+     */
+    @GetMapping("/list")
+    public Result<List<Pet>> getPetListByUserIdQuery(@RequestParam Integer userId) {
+        // 直接复用原有路径参数的逻辑
+        return getPetListByUserId(userId);
+    }
 
-    // 7. 关联宠物照片（修复：改用@RequestBody接收参数，适配前端传递方式）
+    /**
+     * 2. 【核心】根据用户ID查询所有宠物（登录用户专属）
+     * 支持两种调用方式：
+     * 1. 路径参数：/pet/user/{userId}
+     * 2. Query参数：/pet/list?userId={userId}（兼容前端）
+     * @param userId 用户ID（必传，确保只能查询自己的宠物）
+     * @return 该用户的所有宠物列表
+     */
+    @GetMapping("/user/{userId}")
+    public Result<List<Pet>> getPetListByUserId(@PathVariable Integer userId) {
+        // 1. 校验用户ID合法性
+        if (userId == null || userId <= 0) {
+            log.warn("查询用户宠物失败：用户ID不合法，userId={}", userId);
+            return Result.fail("查询失败：用户ID必须为正整数");
+        }
+
+        // 2. 构建查询条件：仅查询该用户的宠物，按更新时间倒序
+        QueryWrapper<Pet> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("user_id", userId) // 核心：只查当前用户的宠物
+                .orderByDesc("update_time"); // 最新修改的宠物排在前面
+
+        // 3. 执行查询
+        List<Pet> petList = petService.list(queryWrapper);
+        log.info("查询用户[{}]的宠物列表完成，共{}条记录", userId, petList.size());
+
+        // 4. 返回结果（空列表友好提示）
+        String msg = petList.isEmpty() ? "暂无宠物信息" : "查询宠物列表成功";
+        return Result.success(petList, msg);
+    }
+
+    /**
+     * 3. 关联宠物照片（更新宠物的照片URL）
+     * @param photoDTO 照片关联参数（petId + photoType + imgUrl）
+     * @return 关联结果
+     */
     @PutMapping("/update-photo")
     public Result<Void> updatePetPhoto(@RequestBody PetPhotoDTO photoDTO) {
+        log.info("开始关联宠物照片，参数：{}", photoDTO);
+
         Integer petId = photoDTO.getPetId();
         String photoType = photoDTO.getPhotoType();
         String imgUrl = photoDTO.getImgUrl();
 
+        // 1. 参数校验
+        if (petId == null || petId <= 0) {
+            return Result.fail("关联失败：宠物ID必须为正整数");
+        }
+        if (!"face".equals(photoType) && !"body".equals(photoType)) {
+            return Result.fail("关联失败：照片类型仅支持face/body");
+        }
+        if (imgUrl == null || imgUrl.trim().isEmpty()) {
+            return Result.fail("关联失败：图片URL不能为空");
+        }
+
+        // 2. 校验宠物是否存在
         Pet pet = petService.getById(petId);
         if (pet == null) {
+            log.warn("关联宠物照片失败：宠物ID不存在，petId={}", petId);
             return Result.fail("关联失败：宠物ID不存在");
         }
 
+        // 3. 更新照片URL
         if ("face".equals(photoType)) {
             pet.setPetFacePhoto(imgUrl);
-        } else if ("body".equals(photoType)) {
-            pet.setPetBodyPhoto(imgUrl);
         } else {
-            return Result.fail("关联失败：照片类型仅支持face或body");
+            pet.setPetBodyPhoto(imgUrl);
         }
-
         pet.setUpdateTime(LocalDateTime.now());
+
         boolean success = petService.updateById(pet);
         if (success) {
+            log.info("关联宠物照片成功，宠物ID：{}，照片类型：{}", petId, photoType);
             return Result.success("宠物照片关联成功");
         } else {
+            log.error("关联宠物照片失败，参数：{}", photoDTO);
             return Result.fail("宠物照片关联失败");
         }
     }
 
-    // 8. 分页查询接口（可选：封装Result）
-    @GetMapping("/page")
-    public Result<IPage<Pet>> getPetPage(
-            @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "5") Integer pageSize,
-            @RequestParam(required = false) Integer userId,
-            @RequestParam(required = false) String petType
-    ) {
-        QueryWrapper<Pet> queryWrapper = new QueryWrapper<>();
-        if (userId != null) queryWrapper.eq("user_id", userId);
-        if (petType != null) queryWrapper.eq("pet_type", petType);
-        IPage<Pet> petPage = petService.page(new Page<>(pageNum, pageSize), queryWrapper);
-        return Result.success(petPage, "分页查询宠物成功");
-    }
-
-    // 新增DTO：接收照片关联参数（放在controller同包下）
+    /**
+     * 内部DTO：接收宠物照片关联参数
+     * （也可单独放到 dto 包下，此处为简化放在控制器内部）
+     */
     public static class PetPhotoDTO {
-        private Integer petId;
-        private String photoType;
-        private String imgUrl;
+        private Integer petId;       // 宠物ID
+        private String photoType;   // 照片类型（face/body）
+        private String imgUrl;      // 图片访问URL
 
-        // 必须添加getter/setter（否则Spring无法解析参数）
+        // Getter & Setter
         public Integer getPetId() {
             return petId;
         }

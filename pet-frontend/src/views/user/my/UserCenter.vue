@@ -3,8 +3,7 @@
     <div class="user-center">
       <!-- 顶部用户信息 -->
       <div class="user-info">
-  <div class="avatar">
-          <!--绑定动态头像URL -->
+        <div class="avatar">
           <img
             :src="userInfo.avatarUrl || defaultAvatar"
             alt="用户头像"
@@ -22,8 +21,8 @@
         </div>
       </div>
 
-      <!-- 宠物管理 -->
-      <div class="pet-management white-bg">
+      <!-- 条件渲染：无宠物信息 → 显示待添加盒；有信息 → 显示选项卡+卡片 -->
+      <div v-if="!petList.length" class="pet-management white-bg">
         <h3>待添加</h3>
         <div class="add-pet">
           <div class="add-icon">
@@ -39,7 +38,57 @@
         </div>
       </div>
 
-      <!-- 我的订单 -->
+      <div v-else>
+        <!-- 新增：宠物选项卡（点击切换） -->
+        <div class="pet-tabs">
+          <div
+            v-for="(pet, index) in petList"
+            :key="pet.petId"
+            class="pet-tab"
+            :class="{ active: activePetIndex === index }"
+            @click="activePetIndex = index"
+          >
+            {{ pet.name }}
+          </div>
+          <div class="add-pet-tab" @click="handleAddPetClick">+添加宠物</div>
+        </div>
+
+        <!-- 宠物卡片容器（仅展示当前选中的宠物） -->
+        <div class="pet-card-container">
+          <!-- 仅渲染当前选中的宠物 -->
+          <div class="pet-card">
+            <!-- 宠物头像 -->
+            <div class="pet-avatar">
+              <img
+                :src="currentPet.avatarUrl"
+                alt="宠物头像"
+                class="avatar-img"
+              />
+            </div>
+
+            <!-- 宠物信息区（动态绑定当前选中宠物数据） -->
+            <div class="pet-info">
+              <div class="pet-name-row">
+                <h4 class="pet-name">{{ currentPet.name }}</h4>
+                <!-- 性别图标（已修复路径） -->
+                <img
+                  :src="currentPet.gender === '公' ? maleIcon : femaleIcon"
+                  alt="性别"
+                  class="sex"
+                />
+                <span class="pet-tag">宠物待保障</span>
+              </div>
+              <div class="pet-desc">
+                {{ currentPet.breed }} {{ currentPet.age }}
+                <img src="@/assets/images/我的图标/编辑.svg" alt="编辑图标" />
+              </div>
+              <p class="pet-id">No.{{ currentPet.uniqueId }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 我的订单、宠物保障等原有模块保持不变 -->
       <div class="my-orders white-bg">
         <h3>我的订单</h3>
         <div class="order-tabs">
@@ -66,7 +115,6 @@
         </div>
       </div>
 
-      <!-- 宠物保障 -->
       <div class="pet-guarantee white-bg">
         <h3>宠物保障</h3>
         <div class="guarantee-card">
@@ -83,102 +131,102 @@
         </div>
       </div>
     </div>
-  <!-- 登录/注册弹窗 -->
- <div>
-    <!-- 登录/注册弹窗 (未登录时显示) -->
-    <el-dialog
-      v-model="dialogVisible"
-      width="30%"
-      :close-on-click-modal="false"
-    >
-      <!-- 新增：错误提示区域（仅在有错误时显示，不影响原有样式） -->
-      <div v-if="errorMsg" class="error-tip">
-        <i class="el-icon-error"></i> {{ errorMsg }}
-      </div>
+    <!-- 登录/注册弹窗 -->
+    <div>
+      <!-- 登录/注册弹窗 (未登录时显示) -->
+      <el-dialog
+        v-model="dialogVisible"
+        width="30%"
+        :close-on-click-modal="false"
+      >
+        <!-- 新增：错误提示区域（仅在有错误时显示，不影响原有样式） -->
+        <div v-if="errorMsg" class="error-tip">
+          <i class="el-icon-error"></i> {{ errorMsg }}
+        </div>
 
-      <div class="login-tabs">
-        <div
-          class="login-tab"
-          :class="{ active: activeTab === 'login' }"
-          @click="() => { activeTab = 'login'; clearError() }"
-        >
-          登录
+        <div class="login-tabs">
+          <div
+            class="login-tab"
+            :class="{ active: activeTab === 'login' }"
+            @click="() => { activeTab = 'login'; clearError() }"
+          >
+            登录
+          </div>
+          <div
+            class="login-tab"
+            :class="{ active: activeTab === 'register' }"
+            @click="() => { activeTab = 'register'; clearError() }"
+          >
+            注册
+          </div>
         </div>
-        <div
-          class="login-tab"
-          :class="{ active: activeTab === 'register' }"
-          @click="() => { activeTab = 'register'; clearError() }"
-        >
-          注册
+        <div v-if="activeTab === 'login'" class="login-form">
+          <el-form :model="loginForm" label-width="80px">
+            <el-form-item label="邮箱">
+              <el-input
+                v-model="loginForm.email"
+                placeholder="请输入邮箱"
+                @input="clearError"
+              ></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="loginForm.password"
+                type="password"
+                placeholder="请输入密码"
+                @input="clearError"
+              ></el-input>
+            </el-form-item>
+          </el-form>
         </div>
-      </div>
-      <div v-if="activeTab === 'login'" class="login-form">
-        <el-form :model="loginForm" label-width="80px">
-          <el-form-item label="邮箱">
-            <el-input
-              v-model="loginForm.email"
-              placeholder="请输入邮箱"
-              @input="clearError"
-            ></el-input>
-          </el-form-item>
-          <el-form-item label="密码">
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              placeholder="请输入密码"
-              @input="clearError"
-            ></el-input>
-          </el-form-item>
-        </el-form>
-      </div>
-      <div v-else class="register-form">
-        <el-form :model="registerForm" label-width="80px">
-          <el-form-item label="用户名">
-            <el-input
-              v-model="registerForm.username"
-              placeholder="请输入用户名"
-              @input="clearError"
-            ></el-input>
-          </el-form-item>
-          <el-form-item label="邮箱">
-            <el-input
-              v-model="registerForm.email"
-              placeholder="请输入邮箱"
-              @input="clearError"
-            ></el-input>
-          </el-form-item>
-          <el-form-item label="密码">
-            <el-input
-              v-model="registerForm.password"
-              type="password"
-              placeholder="请输入密码"
-              @input="clearError"
-            ></el-input>
-          </el-form-item>
-        </el-form>
-      </div>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleAuthSubmit">
-          {{ activeTab === 'login' ? '登录' : '注册' }}
-        </el-button>
-      </template>
-    </el-dialog>
+        <div v-else class="register-form">
+          <el-form :model="registerForm" label-width="80px">
+            <el-form-item label="用户名">
+              <el-input
+                v-model="registerForm.username"
+                placeholder="请输入用户名"
+                @input="clearError"
+              ></el-input>
+            </el-form-item>
+            <el-form-item label="邮箱">
+              <el-input
+                v-model="registerForm.email"
+                placeholder="请输入邮箱"
+                @input="clearError"
+              ></el-input>
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input
+                v-model="registerForm.password"
+                type="password"
+                placeholder="请输入密码"
+                @input="clearError"
+              ></el-input>
+            </el-form-item>
+          </el-form>
+        </div>
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleAuthSubmit">
+            {{ activeTab === 'login' ? '登录' : '注册' }}
+          </el-button>
+        </template>
+      </el-dialog>
+    </div>
   </div>
-</div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
-// 1. 引入Vue Router的useRouter方法
 import { useRouter } from 'vue-router'
-// 2. 导入统一封装的用户接口（不再用原生axios）
-import { login, register } from '@/api/user/index.js'
-// 4. 导入默认头像
+import { login, register, getPetListByUserId } from '@/api/user/index.js'
 import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
+import defaultPetAvatar from '@/assets/images/我的图标/添加.svg'
+// 导入性别图标（修复动态绑定路径问题）
+import maleIcon from '@/assets/images/我的图标/男.svg'
+import femaleIcon from '@/assets/images/我的图标/女.svg'
 
-// 创建router实例
 const router = useRouter()
 
 // 登录状态管理
@@ -192,19 +240,19 @@ const userInfo = ref({
 // 弹窗控制
 const dialogVisible = ref(false)
 const activeTab = ref('login')
-// 错误提示：核心变量
 const errorMsg = ref('')
 
-// 登录表单
-const loginForm = reactive({
-  email: '',
-  password: ''
-})
-// 注册表单
-const registerForm = reactive({
-  username: '',
-  email: '',
-  password: ''
+// 登录/注册表单
+const loginForm = reactive({ email: '', password: '' })
+const registerForm = reactive({ username: '', email: '', password: '' })
+
+// ========== 核心：宠物列表+选项卡激活索引 ==========
+const petList = ref([])
+const activePetIndex = ref(0) // 默认选中第一个宠物
+
+// 计算属性：当前选中的宠物
+const currentPet = computed(() => {
+  return petList.value[activePetIndex.value] || {}
 })
 
 // 清空错误提示
@@ -212,12 +260,12 @@ const clearError = () => {
   errorMsg.value = ''
 }
 
-// 页面加载时检查登录状态
+// 页面加载时检查登录状态+获取宠物列表
 onMounted(() => {
   checkLoginStatus()
 })
 
-// 检查登录状态（使用全局配置拼接头像URL）
+// 检查登录状态
 const checkLoginStatus = () => {
   const userData = localStorage.getItem('userData')
   if (userData) {
@@ -229,134 +277,134 @@ const checkLoginStatus = () => {
       userId: parsed.userId,
       avatarUrl: avatarUrl
     }
+    // 获取宠物列表
+    fetchAndPrintPetList()
   }
 }
 
-// 登录/注册加载状态（防止重复点击）
-const isLoading = ref(false)
-
-// 使用统一封装的API请求
-const handleAuthSubmit = async () => {
-  // 防止重复点击
-  if (isLoading.value) return
+// ========== 完善：获取并格式化宠物列表 ==========
+const fetchAndPrintPetList = async () => {
   try {
-    // 开启加载状态
+    const res = await getPetListByUserId(userInfo.value.userId)
+    if (res.code === 200) {
+      // 格式化宠物数据（适配页面展示）
+      petList.value = res.data.map(pet => ({
+        name: pet.petName,
+        avatarUrl: pet.petFacePhoto || defaultPetAvatar,
+        breed: pet.petType,
+        age: calculatePetAge(pet.petBirthday), // 动态计算年龄
+        uniqueId: pet.petUniqueId || `${pet.petId}`,
+        petId: pet.petId,
+        gender: pet.petGender || '公', // 后端无性别时默认“公”
+        sterilized: pet.isSterilized
+      }))
+      console.log(`【用户${userInfo.value.userId}的宠物列表】`, petList.value)
+    } else {
+      console.log(`【获取宠物列表失败】${res.msg || '未知错误'}`)
+      petList.value = []
+    }
+  } catch (err) {
+    console.error('【获取宠物列表异常】', err)
+    petList.value = []
+  }
+}
+
+// ========== 新增：计算宠物年龄 ==========
+const calculatePetAge = (birthday) => {
+  if (!birthday) return '未知年龄'
+  const birthDate = new Date(birthday)
+  const now = new Date()
+  let ageYear = now.getFullYear() - birthDate.getFullYear()
+  let ageMonth = now.getMonth() - birthDate.getMonth()
+  if (ageMonth < 0) {
+    ageYear--
+    ageMonth += 12
+  }
+  return `${ageYear}岁${ageMonth}个月`
+}
+
+// 登录/注册提交（原有逻辑保持不变）
+const isLoading = ref(false)
+const handleAuthSubmit = async () => {
+  try {
     isLoading.value = true
     clearError()
-    let res
+    let result // 直接接收后端返回的{code:200, msg:"", data:{}}
 
     if (activeTab.value === 'login') {
-      // 调用封装的login接口
-      res = await login({
+      // 直接接收响应拦截器返回的后端原始数据
+      result = await login({
         email: loginForm.email,
         password: loginForm.password
       })
     } else {
-      // 调用封装的register接口
-      res = await register({
+      result = await register({
         username: registerForm.username,
         email: registerForm.email,
         password: registerForm.password
       })
     }
 
-    const result = res.data || {}
-    console.log('后端原始响应：', result)
-
+    // 核心：根据后端返回的code判断成功/失败
     if (result.code === 200) {
       if (activeTab.value === 'login') {
-        // 登录成功：使用全局配置拼接头像URL
+        // 登录成功逻辑
         const userData = result.data
         userData.avatarUrl = userData.avatarUrl || defaultAvatar
         localStorage.setItem('userData', JSON.stringify(userData))
         dialogVisible.value = false
         ElMessage.success('登录成功！')
-        // 刷新页面后重新初始化头像
         window.location.reload()
       } else {
         ElMessage.success(result.msg || '注册成功，请登录！')
         activeTab.value = 'login'
-        registerForm.username = ''
-        registerForm.email = ''
-        registerForm.password = ''
+        registerForm.username = registerForm.email = registerForm.password = ''
       }
     } else {
+      // 后端返回业务失败（如密码错误）
       errorMsg.value = result.msg || (activeTab.value === 'login' ? '登录失败！' : '注册失败！')
-      if (result.code === 400 || result.code === 409) {
-        const emailInput = document.querySelector(`.${activeTab.value}-form input[placeholder="请输入邮箱"]`)
-        if (emailInput) emailInput.focus()
-      }
     }
   } catch (error) {
+    // 这里仅捕获网络错误（如后端服务未启动）
     console.error('请求错误：', error)
-    const errData = error.response?.data || {}
-    errorMsg.value = errData.msg ||
-      (activeTab.value === 'login' ? '登录失败，请检查邮箱/密码！' : '注册失败，请检查信息！')
-    if (!error.response) {
-      errorMsg.value = '网络异常，请检查后端服务是否启动！'
-    }
-
-    const emailInput = document.querySelector(`.${activeTab.value}-form input[placeholder="请输入邮箱"]`)
-    if (emailInput) emailInput.focus()
+    errorMsg.value = error.msg || '网络异常，请检查后端服务是否启动！'
   } finally {
-    // 无论成功/失败，都关闭加载状态
     isLoading.value = false
   }
 }
 
-// 事件处理函数（原有不变）
+// 事件处理函数（原有逻辑保持不变）
 const handleAvatarClick = () => {
-  if (!userInfo.value.isLogin) {
-    dialogVisible.value = true
-  }
+  if (!userInfo.value.isLogin) dialogVisible.value = true
 }
-
 const handleNameClick = () => {
-  if (!userInfo.value.isLogin) {
-    dialogVisible.value = true
-  }
+  if (!userInfo.value.isLogin) dialogVisible.value = true
 }
-// 编辑当前用户
 const handleEditClick = () => {
-  // 校验用户是否登录（可选，根据需求保留）
   if (!userInfo.value.userId) {
     ElMessage.warning('请先登录后再进入个人设置！')
     return
   }
-  // 跳转到 UserSetting 页面（匹配你的路由配置）
-  router.push({
-    path: '/user/setting' // 直接跳转到个人设置路由
-    // 若需用命名路由跳转（推荐，需路由配置name: 'UserSetting'）
-    // name: 'UserSetting'
-  }).then(() => {
+  router.push({ path: '/user/setting' }).then(() => {
     ElMessage.info('正在跳转到个人设置页面')
   }).catch(err => {
     console.error('路由跳转失败：', err)
     ElMessage.error('跳转失败，请检查路由配置')
   })
 }
-
 const handleAddPetClick = () => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
     return
   }
   try {
-    // 跳转时传递userId（两种方式可选）
-    router.push({
-      path: '/pet-id-card',
-      // 方式1：query传参（URL可见，刷新不丢失）【推荐】
-      query: {
-        userId: userInfo.value.userId
-      }
-    })
+    router.push({ path: '/pet-id-card', query: { userId: userInfo.value.userId } })
     ElMessage.success('正在前往添加宠物页面')
   } catch (err) {
     console.error('路由跳转失败：', err)
     ElMessage.error('页面跳转失败，请重试')
   }
 }
-
 const handleOrderTabClick = () => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
@@ -364,7 +412,6 @@ const handleOrderTabClick = () => {
   }
   ElMessage.info('查看订单列表')
 }
-
 const handleGuaranteeClick = () => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
@@ -445,7 +492,7 @@ const handleGuaranteeClick = () => {
 .privacy-tag {
   font-size: 12px;
   color: #666;
-  margin-top: 4px;
+  margin-left: auto;
 }
 
 .white-bg {
@@ -799,5 +846,150 @@ const handleGuaranteeClick = () => {
 /* 输入框聚焦时高亮 */
 .el-input__inner:focus {
   border-color: #2196f3;
+}
+
+/* 容器样式 */
+.pet-card-container {
+  width: 100%;
+  margin: 16px 0;
+  font-family: "微软雅黑", sans-serif;
+}
+
+/* 顶部标题栏 */
+.pet-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.pet-card-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+.add-pet-btn {
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.add-pet-btn:hover {
+  color: #2196f3;
+}
+
+/* 卡片主体 */
+.pet-card {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 头像区域（含徽章） */
+.pet-avatar {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin-right: 16px;
+}
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.pet-badge {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  width: 40px;
+  height: 40px;
+  z-index: 10;
+}
+.sex {
+  width: 20px;
+  height: 20px;
+}
+
+/* 信息区域 */
+.pet-info {
+  flex: 1;
+}
+.pet-name-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  display: flex;
+}
+.pet-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+.pet-tag {
+  font-size: 12px;
+  color: #409eff;
+  background: #ecf5ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto
+}
+.pet-desc {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: #666;
+  margin: 4px 0;
+}
+.pet-desc img{
+width:15px;
+margin-left: 10px;
+}
+.pet-id {
+  font-size: 12px;
+  color: #999;
+  margin-top: 20px;
+}
+
+/* 新增：宠物选项卡样式（匹配设计风格） */
+.pet-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+}
+.pet-tab {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s ease;
+}
+.pet-tab.active {
+  color: #2196f3;
+  border-bottom: 2px solid #2196f3;
+}
+.add-pet-tab {
+  margin-left: auto;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.add-pet-tab:hover {
+  color: #2196f3;
 }
 </style>

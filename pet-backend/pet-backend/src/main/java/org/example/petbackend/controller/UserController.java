@@ -22,7 +22,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/user")
-@CrossOrigin
 public class UserController {
     private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
