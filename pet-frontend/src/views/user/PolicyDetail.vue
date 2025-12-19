@@ -4,7 +4,7 @@
     <div class="page-container">
       <div class="pet-insurance-page">
         <!-- 单独返回按钮（固定在内容区左上角） -->
-        <button class="back-btn" @click="goBack">&lt;</button>
+        <button class="back-btn" @click="handleBack">&lt;</button>
 
         <!-- 套餐选择区域 -->
         <div class="package-section">
@@ -23,8 +23,32 @@
           </div>
         </div>
 
-        <!-- 宠物信息表单 -->
-        <div class="pet-form">
+        <!-- 核心：被保宠物档案 和 表单 互斥显示 -->
+        <!-- 有宠物时显示档案（隐藏表单） -->
+        <div class="pet-archive" v-if="userPetList.length > 0">
+          <h3>被保宠物档案</h3>
+          <div class="pet-list">
+            <!-- 已绑定的宠物 -->
+            <div
+              class="pet-item"
+              v-for="(pet) in userPetList"
+              :key="pet.petId"
+              @click="selectPet(pet)"
+              :class="{ active: selectedPetId === pet.petId }"
+            >
+              <img :src="pet.petFacePhoto || '@/assets/images/默认宠物头像.svg'" alt="宠物头像" class="pet-avatar" />
+              <span class="pet-name">{{ pet.petName }}</span>
+            </div>
+            <!-- 添加宠物按钮 -->
+            <div class="pet-item add-pet" @click="showAddPetForm">
+              <span class="plus-icon">+</span>
+              <span class="pet-name">添加宠物</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 无宠物时显示表单（隐藏档案） -->
+        <div class="pet-form" v-else>
           <h3>填写被保宠物</h3>
           <div class="form-group">
             <label>宠物昵称</label>
@@ -97,45 +121,59 @@
               </button>
             </div>
           </div>
+          <!-- 原生图片上传区域 -->
           <div class="form-group">
             <label>宠物照片</label>
             <div class="photo-upload-group">
-              <!-- 正脸照上传组件：绑定file-list并修复回显逻辑 -->
-              <el-upload
-                class="photo-upload"
-                :action="uploadUrl"
-                list-type="picture-card"
-                :limit="1"
-                :data="getUploadData('face')"
-                :on-success="(res, file) => handlePhotoSuccess(res, file, 'face')"
-                :on-remove="(file) => handlePhotoRemove(file, 'face')"
-                :file-list="faceFileList"
-              >
-                <template #default>
-                  <div class="upload-icon">
-                    <el-icon class="el-icon--upload"><Plus /></el-icon>
+              <!-- 正脸照上传 -->
+              <div class="photo-upload">
+                <div class="upload-content" @click="triggerFileInput('face')">
+                  <img v-if="previewUrls.face" :src="previewUrls.face" class="preview-img" alt="正脸照" />
+                  <div v-else class="upload-placeholder">
+                    <span class="plus-icon">+</span>
                     <div class="upload-text">正脸照</div>
                   </div>
-                </template>
-              </el-upload>
-              <!-- 全身照上传组件：绑定file-list并修复回显逻辑 -->
-              <el-upload
-                class="photo-upload"
-                :action="uploadUrl"
-                list-type="picture-card"
-                :limit="1"
-                :data="getUploadData('body')"
-                :on-success="(res, file) => handlePhotoSuccess(res, file, 'body')"
-                :on-remove="(file) => handlePhotoRemove(file, 'body')"
-                :file-list="bodyFileList"
-              >
-                <template #default>
-                  <div class="upload-icon">
-                    <el-icon class="el-icon--upload"><Plus /></el-icon>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="file-input"
+                  ref="faceFileRef"
+                  @change="handleFileChange($event, 'face')"
+                >
+                <button
+                  v-if="previewUrls.face"
+                  class="delete-btn"
+                  @click.stop="handleDelete('face')"
+                >
+                  ×
+                </button>
+              </div>
+
+              <!-- 全身照上传 -->
+              <div class="photo-upload">
+                <div class="upload-content" @click="triggerFileInput('body')">
+                  <img v-if="previewUrls.body" :src="previewUrls.body" class="preview-img" alt="全身照" />
+                  <div v-else class="upload-placeholder">
+                    <span class="plus-icon">+</span>
                     <div class="upload-text">全身照</div>
                   </div>
-                </template>
-              </el-upload>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="file-input"
+                  ref="bodyFileRef"
+                  @change="handleFileChange($event, 'body')"
+                >
+                <button
+                  v-if="previewUrls.body"
+                  class="delete-btn"
+                  @click.stop="handleDelete('body')"
+                >
+                  ×
+                </button>
+              </div>
             </div>
             <p class="tip">请上传宠物清晰正脸照和全身照</p>
           </div>
@@ -151,6 +189,17 @@
           </div>
           <p>每月按支付宝默认扣款顺序自动扣款</p>
           <p class="warning">已使用赠送服务的用户，缴费4期后可退保</p>
+          <!-- 协议勾选移至缴费方式区域 -->
+          <div class="form-group agree-group">
+            <label class="agree-label">
+              <span style="width: 250px;">我已阅读并同意《宠物保障服务协议》</span>
+              <input
+                type="checkbox"
+                v-model="isAgreed"
+                class="agree-checkbox"
+              >
+            </label>
+          </div>
         </div>
 
         <!-- 产品特色 -->
@@ -165,199 +214,343 @@
           <img src="@/assets/images/保障图标/理赔说明.jpg" alt="理赔说明" />
         </div>
 
-        <!-- 理赔案例轮播（底部小点切换） -->
+        <!-- 理赔案例轮播 -->
         <div class="claim-case">
           <h3>理赔案例</h3>
-          <v-carousel
+          <el-carousel
             v-model="currentCase"
-            show-indicators
-            indicator-color="primary"
-            height="2100"
-            rounded="lg"
-            elevation="2"
+            indicator-position="outside"
+            height="1700px"
+            :autoplay="true"
           >
-            <v-carousel-item
+            <el-carousel-item
               v-for="(img, index) in caseImages"
               :key="index"
             >
-              <v-img
+              <img
                 :src="img"
-                cover
-                rounded="lg"
-                width="100%"
+                style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;"
+                alt="理赔案例"
               />
-            </v-carousel-item>
-          </v-carousel>
+            </el-carousel-item>
+          </el-carousel>
         </div>
 
         <!-- 底部投保栏 -->
         <div class="bottom-bar">
           <button class="consult-btn">咨询</button>
-          <button class="add-btn">+</button>
+          <button class="add-btn" @click="showAddPetForm">+</button>
           <p>{{ getPriceText() }}</p>
-          <button class="insure-btn" @click="submitInsure">我要投保</button>
+          <button
+            class="insure-btn"
+            @click="completePetInfo"
+            :disabled="!canSubmit || isSubmitting"
+          >
+            <span v-if="!isSubmitting">我要投保</span>
+            <span v-else>提交中...</span>
+          </button>
         </div>
       </div>
     </div>
+
+    <!-- 登录弹窗（如需显示登录提示可补充） -->
+    <el-dialog v-model="dialogVisible" title="请先登录" width="30%">
+      <p>您需要先登录才能添加宠物哦！</p>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="toLogin">去登录</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { VCarousel, VCarouselItem, VImg } from 'vuetify/components'
-import { ref, reactive, getCurrentInstance } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
-import axios from 'axios'
+// 导入核心依赖
+import { reactive, ref, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+// 导入api方法（新增：获取用户宠物列表）
+import { addPet, uploadPetImg, updatePetPhoto, getPetListByUserId } from '@/api/user/index.js'
+
+// 导入Element Plus组件
+import { ElDatePicker, ElCarousel, ElCarouselItem, ElMessage, ElDialog, ElButton } from 'element-plus'
 // 导入理赔案例图片
 import case1 from '@/assets/images/保障图标/投保案例1.jpg'
 import case2 from '@/assets/images/保障图标/投保案例2.jpg'
 import case3 from '@/assets/images/保障图标/投保案例3.jpg'
 
+// ========== 新增：用户登录状态相关 ==========
+const userInfo = ref({
+  isLogin: false, // 示例：默认未登录，需替换为真实登录状态
+  userId: ''
+})
+const dialogVisible = ref(false) // 登录弹窗显示状态
+
+// ========== 复用核心逻辑 ==========
+// 路由实例
 const router = useRouter()
-const { proxy } = getCurrentInstance() // 获取全局实例（用于获取用户ID）
+const route = useRoute()
 
-// -------- 基础配置 --------
-const uploadUrl = '/pet/upload' // 后端照片上传接口地址
-const petApiUrl = '/pet' // 宠物接口前缀
-// 模拟获取当前登录用户ID（实际项目从全局状态/登录信息中获取）
-const currentUserId = ref(1001) // 示例用户ID，需替换为真实逻辑
+// 状态管理
+const isSubmitting = ref(false)
+const isAgreed = ref(false) // 协议勾选状态（移至缴费区后仍复用）
+const userPetList = ref([]) // 用户已绑定的宠物列表
+const selectedPetId = ref('') // 当前选中的宠物ID
 
-// -------- 套餐切换 --------
-const activeTab = ref('premium') // 默认选中尊享版
-// 套餐价格配置（元/月）
+// 文件Ref
+const faceFileRef = ref(null)
+const bodyFileRef = ref(null)
+
+// 前端缓存：图片文件 + 预览URL
+const cacheFiles = ref({ face: null, body: null })
+const previewUrls = ref({ face: '', body: '' })
+
+// 表单数据
+const petForm = reactive({
+  userId: '',
+  petName: '',
+  petBirthday: '',
+  petType: '',
+  petGender: '',
+  isSterilized: '',
+  petFacePhoto: '',
+  petBodyPhoto: ''
+})
+
+// 套餐切换
+const activeTab = ref('premium')
 const packagePrice = {
   basic: 18.00,
   advanced: 38.00,
   premium: 68.00
 }
+const paymentMethod = ref('monthly')
 
-// -------- 宠物表单数据 --------
-const petForm = reactive({
-  petName: '', // 宠物昵称
-  petBirthday: '', // 出生日期（YYYY-MM-DD）
-  petType: '猫', // 宠物种类（猫/狗）
-  petGender: '公', // 宠物性别（公/母）
-  isSterilized: '否', // 是否绝育（是/否）
-  petFacePhoto: '', // 正脸照URL
-  petBodyPhoto: '', // 全身照URL
-  userId: currentUserId.value // 关联用户ID
-})
-// 照片文件列表（用于Element Plus上传组件回显，修复后可正确显示已上传图片）
-const faceFileList = ref([])
-const bodyFileList = ref([])
-
-// -------- 缴费方式 --------
-const paymentMethod = ref('monthly') // 默认按月缴费
-
-// -------- 理赔案例轮播 --------
+// 理赔案例轮播
 const caseImages = ref([case1, case2, case3])
 const currentCase = ref(0)
 
-// -------- 方法定义 --------
-// 返回上一页
-const goBack = () => {
-  router.back()
-}
-
-// 获取上传参数（包含用户ID、宠物ID、照片类型）
-const getUploadData = (photoType) => {
-  // 宠物ID：新增宠物时可能还未生成，这里先模拟，实际需调整逻辑
-  // 方案1：先新增宠物获取petId，再上传照片；方案2：后端支持先上传再关联
-  const petId = ref(2001) // 示例宠物ID，实际需替换为真实逻辑
-  return {
-    userId: currentUserId.value,
-    petId: petId.value,
-    photoType: photoType // face/body
+// ========== 新增：添加宠物按钮逻辑 ==========
+const showAddPetForm = () => {
+  // 1. 校验登录状态
+  if (!userInfo.value.isLogin) {
+    dialogVisible.value = true
+    return
+  }
+  // 2. 登录状态下跳转添加宠物页面
+  try {
+    router.push({
+      path: '/pet-id-card',
+      query: { userId: userInfo.value.userId }
+    })
+    ElMessage.success('正在前往添加宠物页面')
+  } catch (err) {
+    console.error('路由跳转失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
   }
 }
 
-// 照片上传成功回调（修复参数传递，确保file-list正确更新）
-const handlePhotoSuccess = (res, file, photoType) => {
-  if (res.startsWith('/pet-images/')) { // 后端返回有效路径
-    if (photoType === 'face') {
-      petForm.petFacePhoto = res
-      faceFileList.value = [{
-        name: file.name,
-        url: res // 绑定图片URL，使el-upload回显
-      }]
-    } else {
-      petForm.petBodyPhoto = res
-      bodyFileList.value = [{
-        name: file.name,
-        url: res // 绑定图片URL，使el-upload回显
-      }]
+// 跳转登录页（弹窗回调）
+const toLogin = () => {
+  dialogVisible.value = false
+  router.push('/login')
+}
+
+// ========== 表单校验（适配协议勾选移至缴费区） ==========
+const canSubmit = computed(() => {
+  // 基础校验：协议勾选 + 非提交中
+  const baseValid = isAgreed.value && !isSubmitting.value
+  if (!baseValid) return false
+
+  // 已选中宠物：仅需协议勾选
+  if (selectedPetId.value) {
+    return true
+  }
+
+  // 未选中宠物：需完整表单校验
+  const basicValid = !!petForm.userId && !!petForm.petName && !!petForm.petType &&
+                    !!petForm.petGender && !!petForm.petBirthday && !!petForm.isSterilized
+  const photoValid = !!cacheFiles.value.face && !!cacheFiles.value.body
+  return basicValid && photoValid
+})
+
+// ========== 页面挂载逻辑 ==========
+onMounted(async () => {
+  // 1. 获取真实用户登录状态（示例：需替换为项目真实登录逻辑）
+  const loginData = JSON.parse(localStorage.getItem('userData') || '{}')
+  userInfo.value = {
+    isLogin: !!loginData.userId,
+    userId: loginData.userId || ''
+  }
+
+  const userId = userInfo.value.userId || route.query.userId
+  // 2. 无有效ID时提示登录
+  if (!userId) {
+    ElMessage.warning('请先登录后再投保！')
+    return
+  }
+
+  // 3. 赋值用户ID并获取宠物列表
+  petForm.userId = String(userId)
+  await fetchUserPetList(userId)
+  console.log('投保页面获取到的真实userId：', petForm.userId)
+})
+
+// ========== 宠物列表相关逻辑 ==========
+const fetchUserPetList = async (userId) => {
+  try {
+    const res = await getPetListByUserId(userId)
+    if (res.code === 200) {
+      userPetList.value = res.data
+      // 若有宠物，默认选中第一个
+      if (userPetList.value.length > 0) {
+        selectPet(userPetList.value[0])
+      }
     }
-    proxy.$message.success(` ${photoType === 'face' ? '正脸照' : '全身照'} 上传成功`)
-  } else {
-    proxy.$message.error(`上传失败：${res}`)
+  } catch (err) {
+    console.error('获取用户宠物列表失败：', err)
+    userPetList.value = []
   }
 }
 
-// 照片移除回调（修复参数传递，确保file-list清空）
-const handlePhotoRemove = (file, photoType) => {
-  if (photoType === 'face') {
-    petForm.petFacePhoto = ''
-    faceFileList.value = []
-  } else {
-    petForm.petBodyPhoto = ''
-    bodyFileList.value = []
+const selectPet = (pet) => {
+  selectedPetId.value = pet.petId
+  // 回显宠物信息
+  petForm.petName = pet.petName
+  petForm.petBirthday = pet.petBirthday
+  petForm.petType = pet.petType
+  petForm.petGender = pet.petGender
+  petForm.isSterilized = pet.isSterilized
+  petForm.petFacePhoto = pet.petFacePhoto
+  petForm.petBodyPhoto = pet.petBodyPhoto
+  // 预览图回显
+  previewUrls.value.face = pet.petFacePhoto
+  previewUrls.value.body = pet.petBodyPhoto
+}
+
+// ========== 文件上传相关逻辑 ==========
+const handleFileChange = (e, type) => {
+  const file = e.target.files[0]
+  if (!file) return
+  // 图片类型校验
+  const fileType = file.type
+  const allowTypes = [
+    'image/jpg', 'image/jpeg', 'image/png', 'image/gif',
+    'image/pjpeg', 'image/x-png'
+  ]
+  if (!allowTypes.includes(fileType)) {
+    ElMessage.error('只能上传jpg、jpeg、png、gif格式图片！')
+    return
+  }
+  // 图片大小校验
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.error('图片大小不能超过5MB！')
+    return
+  }
+  // 缓存文件 + 生成预览URL
+  cacheFiles.value[type] = file
+  previewUrls.value[type] = URL.createObjectURL(file)
+  e.target.value = ''
+}
+
+const triggerFileInput = (type) => {
+  type === 'face' ? faceFileRef.value.click() : bodyFileRef.value.click()
+}
+
+const handleDelete = (type) => {
+  previewUrls.value[type] = ''
+  cacheFiles.value[type] = null
+}
+
+const uploadPhoto = async (file, petIdVal, photoType) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('userId', petForm.userId)
+  formData.append('petId', petIdVal)
+  formData.append('photoType', photoType)
+  return new Promise((resolve) => {
+    setTimeout(async () => {
+      const res = await uploadPetImg(formData)
+      resolve(res)
+    }, 0)
+  })
+}
+
+// ========== 提交投保逻辑 ==========
+const completePetInfo = async () => {
+  isSubmitting.value = true
+  try {
+    let petIdVal = selectedPetId.value
+
+    // 新增宠物场景
+    if (!petIdVal) {
+      const addRes = await addPet({
+        userId: petForm.userId,
+        petName: petForm.petName,
+        petBirthday: petForm.petBirthday,
+        petType: petForm.petType,
+        petGender: petForm.petGender,
+        isSterilized: petForm.isSterilized
+      })
+      if (addRes.code !== 200) throw new Error(`创建宠物失败：${addRes.msg}`)
+      petIdVal = addRes.data.petId
+      ElMessage.success(`宠物ID生成成功：${petIdVal}`)
+
+      // 上传照片
+      if (cacheFiles.value.face) {
+        const faceRes = await uploadPhoto(cacheFiles.value.face, petIdVal, 'face')
+        if (faceRes.code !== 200) throw new Error(`正脸照上传失败：${faceRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'face', imgUrl: faceRes.data })
+      }
+      if (cacheFiles.value.body) {
+        const bodyRes = await uploadPhoto(cacheFiles.value.body, petIdVal, 'body')
+        if (bodyRes.code !== 200) throw new Error(`全身照上传失败：${bodyRes.msg}`)
+        await updatePetPhoto({ petId: petIdVal, photoType: 'body', imgUrl: bodyRes.data })
+      }
+
+      // 刷新宠物列表
+      await fetchUserPetList(petForm.userId)
+    }
+
+    // 投保成功提示
+    ElMessage.success(selectedPetId.value ? '投保成功！' : `宠物身份证创建完成并投保成功！ID：${petIdVal}`)
+    setTimeout(() => {
+      router.go(-1)
+    }, 1500)
+  } catch (err) {
+    console.error('===== 投保失败 =====', err)
+    ElMessage.error(err.message || '提交失败，请重试')
+  } finally {
+    isSubmitting.value = false
+    cacheFiles.value = { face: null, body: null }
+    previewUrls.value = { face: '', body: '' }
   }
 }
 
-// 获取套餐价格文本
+// 返回上一页
+const handleBack = () => {
+  if (router.hasRoute('/pet/list')) {
+    router.push(route.query.redirect || '/pet/list')
+  } else {
+    router.go(-1)
+  }
+}
+
+// 价格计算
 const getPriceText = () => {
   const price = packagePrice[activeTab.value]
   return paymentMethod.value === 'monthly' ? `${price.toFixed(2)}元/月起` : `总计${(price * 12).toFixed(2)}元`
 }
-
-// 表单校验
-const validateForm = () => {
-  if (!petForm.petName) {
-    proxy.$message.warning('请输入宠物昵称')
-    return false
-  }
-  if (!petForm.petBirthday) {
-    proxy.$message.warning('请选择宠物出生日期')
-    return false
-  }
-  if (!petForm.petFacePhoto) {
-    proxy.$message.warning('请上传宠物正脸照')
-    return false
-  }
-  if (!petForm.petBodyPhoto) {
-    proxy.$message.warning('请上传宠物全身照')
-    return false
-  }
-  return true
-}
-
-// 提交投保（先新增宠物，再跳转支付）
-const submitInsure = async () => {
-  if (!validateForm()) return
-
-  try {
-    const res = await axios.post(`${petApiUrl}/add`, petForm)
-    if (res.data.code === 200) { // 后端返回code=200表示成功
-      proxy.$message.success(res.data.msg)
-      // 后续跳转支付等逻辑...
-    } else {
-      proxy.$message.error(res.data.msg || '新增宠物失败，请重试')
-    }
-  } catch (error) {
-    console.error('投保失败：', error)
-    proxy.$message.error('网络异常，请稍后重试')
-  }
-}
 </script>
 
 <style scoped>
-/* 外层居中容器 */
+/* 基础样式 */
+.claim-case .el-carousel {
+  width: 100%;
+}
 .page-container {
   max-width: 1200px;
   margin: 0 auto;
 }
-
-/* 页面整体样式：浅灰色背景 + 内容居中 */
 .pet-insurance-page {
   background-image: url("@/assets/images/保障图标/保险详情页顶部.png");
   background-size: contain;
@@ -372,8 +565,6 @@ const submitInsure = async () => {
   box-sizing: border-box;
   position: relative;
 }
-
-/* 返回按钮：固定在内容区左上角，滚动不消失 */
 .back-btn {
   position: sticky;
   top: 16px;
@@ -393,18 +584,13 @@ const submitInsure = async () => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* 通用区域样式：圆角白色背景 + 统一间距 */
-.package-section, .pet-form, .payment-method, .product-feature, .claim-instruction, .claim-case {
+/* 套餐区域样式 */
+.package-section {
   background-color: #fff;
   border-radius: 12px;
   padding: 20px;
-  margin: 20px auto;
+  margin: 500px auto 20px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-/* 套餐选择区域 */
-.package-section {
-  margin-top: 500px;
 }
 .tab-group {
   display: flex;
@@ -431,33 +617,70 @@ const submitInsure = async () => {
   border-color: #2196f3;
   transform: scale(1.05);
 }
-
-.detail-item span {
-  width: 100px;
-  color: #2196f3;
-  font-weight: 600;
-  text-align: right;
+.package-img img {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 
-/* 宠物信息表单优化 */
-.photo-upload-group {
+/* 被保宠物档案样式 */
+.pet-archive {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.pet-archive h3 {
+  font-size: 20px;
+  margin-bottom: 15px;
+  color: #333;
+  border-bottom: 2px solid #2196f3;
+  padding-bottom: 8px;
+}
+.pet-list {
   display: flex;
   gap: 20px;
+  flex-wrap: wrap;
 }
-.photo-upload {
-  width: 120px;
-  height: 120px;
-}
-.upload-icon {
+.pet-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100%;
+  width: 80px;
+  cursor: pointer;
 }
-.upload-text {
-  margin-top: 8px;
+.pet-item.active {
+  color: #2196f3;
+}
+.pet-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  margin-bottom: 8px;
+  border: 2px solid transparent;
+}
+.pet-item.active .pet-avatar {
+  border-color: #2196f3;
+}
+.pet-name {
   font-size: 14px;
+  text-align: center;
+}
+.add-pet .plus-icon {
+  font-size: 24px;
+  color: #409eff;
+  margin-bottom: 8px;
+}
+
+/* 宠物表单样式 */
+.pet-form {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 .pet-form h3 {
   font-size: 20px;
@@ -475,7 +698,7 @@ const submitInsure = async () => {
   font-weight: 500;
   color: #555;
 }
-.form-group input, .form-group select {
+.form-group input {
   width: 100%;
   padding: 12px;
   border: 1px solid #ddd;
@@ -484,12 +707,11 @@ const submitInsure = async () => {
   font-size: 14px;
   transition: all 0.3s ease;
 }
-.form-group input:focus, .form-group select:focus {
+.form-group input:focus {
   border-color: #2196f3;
   outline: none;
   box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 }
-
 .radio-group {
   display: flex;
   gap: 12px;
@@ -512,13 +734,87 @@ const submitInsure = async () => {
   color: #fff;
   border-color: #2196f3;
 }
+.photo-upload-group {
+  display: flex;
+  gap: 20px;
+}
+.photo-upload {
+  width: 120px;
+  height: 120px;
+  position: relative;
+  border: 1px dashed #dcdfe6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.upload-content {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #606266;
+}
+.plus-icon {
+  font-size: 24px;
+  color: #409eff;
+  margin-bottom: 8px;
+}
+.file-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: -1;
+}
+.delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.8);
+  color: #ff4949;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+.delete-btn:hover {
+  background-color: #ff4949;
+  color: #fff;
+}
 .tip {
   color: #999;
   font-size: 14px;
   margin-top: 8px;
 }
 
-/* 缴费方式 */
+/* 缴费方式样式（包含协议勾选） */
+.payment-method {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
 .payment-method h3 {
   font-size: 20px;
   margin-bottom: 20px;
@@ -526,37 +822,48 @@ const submitInsure = async () => {
   border-bottom: 2px solid #2196f3;
   padding-bottom: 8px;
 }
-.payment-method p {
-  margin: 10px 0;
-  color: #666;
-  line-height: 1.6;
-}
 .warning {
   color: #f57c00;
   font-weight: 500;
 }
+/* 协议勾选样式（移至缴费区后） */
+.agree-group {
+  margin-top: 20px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+.agree-label {
+  display: flex !important;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+}
+.agree-checkbox {
+  margin-right: 8px;
+  width: 16px !important;
+  height: 16px;
+}
 
-/* 产品特色、理赔说明 */
-.product-feature h3, .claim-instruction h3 {
+/* 产品特色/理赔说明/案例 样式 */
+.product-feature, .claim-instruction, .claim-case {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.product-feature h3, .claim-instruction h3, .claim-case h3 {
   font-size: 20px;
   margin-bottom: 20px;
   color: #333;
   border-bottom: 2px solid #2196f3;
   padding-bottom: 8px;
 }
-.package-img img, .product-feature img, .claim-instruction img {
+.product-feature img, .claim-instruction img {
   width: 100%;
   border-radius: 8px;
   margin-bottom: 16px;
-}
-
-/* 理赔案例轮播 */
-.claim-case h3 {
-  font-size: 20px;
-  margin-bottom: 20px;
-  color: #333;
-  border-bottom: 2px solid #2196f3;
-  padding-bottom: 8px;
 }
 
 /* 底部投保栏 */
@@ -599,5 +906,9 @@ const submitInsure = async () => {
   color: #fff;
   padding: 10px 24px;
   border-radius: 20px;
+}
+.insure-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 </style>

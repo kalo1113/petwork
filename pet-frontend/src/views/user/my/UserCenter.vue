@@ -93,12 +93,12 @@
         <h3>我的订单</h3>
         <div class="order-tabs">
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/待生效.svg" alt="待生效" class="order-icon" />
-            <span>待生效</span>
+            <img src="@/assets/images/我的图标/已生效.svg" alt="已生效" class="order-icon" />
+            <span>已生效</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/待预约.svg" alt="待预约" class="order-icon" />
-            <span>待预约</span>
+            <img src="@/assets/images/我的图标/我的钱包.svg" alt="我的钱包" class="order-icon" />
+            <span>我的钱包</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick">
             <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
