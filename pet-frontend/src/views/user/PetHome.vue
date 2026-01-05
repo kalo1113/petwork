@@ -174,7 +174,7 @@ const formatData = (data) => {
 }
 
 // 从接口获取数据
-const fetchData = async (page = 1, pageSize = 6) => {
+const fetchData = async ( pageSize = 6) => {
   try {
     // 模拟分页，实际项目中如果接口支持分页，需要传page参数
     // 这里用size控制每次加载的数量

@@ -220,7 +220,7 @@
           <el-carousel
             v-model="currentCase"
             indicator-position="outside"
-            height="1700px"
+            height="2100px"
             :autoplay="true"
           >
             <el-carousel-item

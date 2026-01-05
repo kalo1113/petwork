@@ -1,117 +1,121 @@
-// vue.config.js 完整配置
 const { defineConfig } = require('@vue/cli-service')
+const path = require('path')
 
 module.exports = defineConfig({
-  // 基础路径（部署时根据实际域名调整）
+  // 基础构建配置（整合你两份配置的有效部分）
   publicPath: '/',
-  // 输出目录
   outputDir: 'dist',
-  // 静态资源目录
   assetsDir: 'static',
-  // 关闭生产环境sourcemap
   productionSourceMap: false,
+  lintOnSave: process.env.NODE_ENV === 'development',
 
-  // ========== 开发服务器配置 ==========
+  // 开发服务器配置（保留你的代理逻辑，简化冗余配置）
   devServer: {
-    port: 8081, // 前端端口
-    open: true, // 启动后自动打开浏览器
-    overlay: {
-      // 编译错误/警告显示在页面上
-      warnings: false,
-      errors: true
+    port: 8081,
+    open: true,
+    client: {
+      overlay: { warnings: true, errors: true },
+      logging: 'verbose'
     },
     proxy: {
-      // 宠物业务接口代理
-      '/pet': {
-        target: 'http://localhost:8080', // 后端服务地址
-        changeOrigin: true, // 开启跨域
-        pathRewrite: { '^/pet': '/pet' }, // 路径无需重写
-        // 超时配置
-        timeout: 10000,
-        // 支持https
-        secure: false
+      '/pet': { 
+        target: 'http://localhost:8080', 
+        changeOrigin: true, 
+        pathRewrite: { '^/pet': '/pet' }, 
+        timeout: 10000, 
+        secure: false 
       },
-      // 宠物图片资源代理
-      '/pet-images': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        pathRewrite: { '^/pet-images': '/pet-images' },
-        // 图片请求支持缓存
-        headers: {
-          'Cache-Control': 'max-age=86400'
-        }
+      '/pet-images': { 
+        target: 'http://localhost:8080', 
+        changeOrigin: true, 
+        pathRewrite: { '^/pet-images': '/pet-images' }, 
+        headers: { 'Cache-Control': 'max-age=86400' } 
       },
-      // 用户相关接口代理
-      '/user': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        pathRewrite: { '^/user': '/user' }
+      '/user': { 
+        target: 'http://localhost:8080', 
+        changeOrigin: true, 
+        pathRewrite: { '^/user': '/user' } 
       },
-      // 保险相关接口代理（补充，若有）
-      '/insurance': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        pathRewrite: { '^/insurance': '/insurance' }
+      '/insurance': { 
+        target: 'http://localhost:8080', 
+        changeOrigin: true, 
+        pathRewrite: { '^/insurance': '/insurance' } 
       }
     }
   },
 
-  // ========== 编译配置（解决Element Plus/Vuetify 兼容） ==========
+  // 编译链配置（整合图片处理 + 兼容修复）
   chainWebpack: config => {
-    // 1. 忽略Element Plus组件的Vue解析（关键！）
-    config.module
-      .rule('vue')
-      .use('vue-loader')
-      .tap(options => {
-        options.compilerOptions = {
-          ...(options.compilerOptions || {}),
-          // 声明el-前缀为自定义元素，交给Element Plus处理
-          isCustomElement: tag => tag.startsWith('el-')
-        }
-        return options
-      })
-
-    // 2. 优化图片加载（适配宠物图片上传/预览）
+    // 1. 图片资源处理（保留你的逻辑）
     config.module
       .rule('images')
       .test(/\.(png|jpe?g|gif|webp)(\?.*)?$/)
-      .use('url-loader')
-      .loader('url-loader')
-      .tap(options => {
-        options.limit = 4096 // 小于4kb的图片转base64
-        options.fallback = {
-          loader: 'file-loader',
-          options: {
-            name: 'static/images/[name].[hash:8].[ext]'
-          }
-        }
-        return options
+      .set('type', 'asset')
+      .set('parser', {
+        dataUrlCondition: { maxSize: 4096 }
+      })
+      .set('generator', {
+        filename: 'static/images/[name].[hash:8].[ext]'
       })
 
-    // 3. 提升Element Plus样式优先级
+    // 2. 自定义页面标题（保留你的逻辑）
     config.plugin('html').tap(args => {
-      args[0].title = '宠物保障系统' // 自定义页面标题
+      args[0].title = '宠物保障系统'
       return args
     })
+
+    // 3. 排除无用的 .applescript 文件（解决 parse failed 错误）
+    config.module
+      .rule('ignore-applescript')
+      .test(/\.applescript$/)
+      .use('null-loader')
+      .loader('null-loader')
+      .end()
+
+    // 4. 映射 polyfill 别名（关键：让 Webpack 找到浏览器端模块）
+    config.resolve.alias
+      .set('stream', path.resolve(__dirname, 'node_modules/stream-browserify'))
+      .set('assert', path.resolve(__dirname, 'node_modules/assert'))
   },
 
-  // ========== 样式配置 ==========
-  css: {
-    // 开启CSS模块化
-    requireModuleExtension: true,
-    // 提取CSS（生产环境）
-    extract: process.env.NODE_ENV === 'production',
-    // CSS sourceMap
-    sourceMap: false,
-    // 预处理器配置（若使用less/sass）
-    loaderOptions: {
-      css: {
-        // 给css-loader传递参数
-        modules: {
-          localIdentName: '[name]-[hash]'
-        },
-        localsConvention: 'camelCaseOnly'
+  // Webpack 核心兼容配置（覆盖所有报错模块）
+  configureWebpack: {
+    resolve: {
+      // 优先解析相对路径，解决 module 模块错误
+      preferRelative: true,
+      // 完整的 fallback 配置，覆盖所有缺失的 Node 模块
+      fallback: {
+        "fs": false,
+        "path": false,
+        "os": false,
+        "net": false,
+        "tls": false,
+        "util": false,
+        "url": false,
+        "child_process": false,
+        "readline": false,
+        "dgram": false,
+        "module": false,
+        "stream": require.resolve("stream-browserify"), // 用 polyfill 替代
+        "assert": require.resolve("assert"), // 用 polyfill 替代
+        "crypto": false,
+        "zlib": false,
+        "http": false,
+        "https": false
       }
-    }
+    },
+    // 忽略无影响的警告，避免编译阻断
+    ignoreWarnings: [
+      /Module not found: Error: Can't resolve 'dgram'/,
+      /Module not found: Error: Can't resolve 'readline'/,
+      /Module parse failed: Unexpected token/
+    ]
+  },
+
+  // 样式配置（保留你的逻辑）
+  css: {
+    extract: process.env.NODE_ENV === 'production',
+    sourceMap: false,
+    loaderOptions: {}
   }
 })

@@ -28,10 +28,6 @@ public class User {
     @Email(message = "邮箱格式不合法")
     private String email; // 用户邮箱（非空，唯一）
 
-    private String detailAddress; // 详细地址（可空）
-
-    private Integer isDefaultAddress; // 是否默认地址（0-否，1-是）
-
     private BigDecimal accountBalance; // 账户余额（默认0.00）
 
     @TableField(fill = FieldFill.INSERT)

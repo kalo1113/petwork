@@ -59,7 +59,6 @@ public class UserController {
         if (user.getAccountBalance() == null) {
             user.setAccountBalance(BigDecimal.ZERO); // 余额默认0
         }
-        user.setIsDefaultAddress(0); // 默认地址0-否
 
         // 4. 数据库插入
         boolean success = userService.save(user);

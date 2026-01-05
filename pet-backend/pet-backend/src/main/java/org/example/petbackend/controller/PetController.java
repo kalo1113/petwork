@@ -1,8 +1,6 @@
 package org.example.petbackend.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.Valid;
 import org.example.petbackend.common.Result;
 import org.example.petbackend.entity.Pet;

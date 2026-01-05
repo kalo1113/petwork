@@ -1,4 +1,4 @@
-# pet-frontend
+# pet-frontend-new
 
 ## Project setup
 ```

@@ -7,7 +7,7 @@ import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/products")
+@RequestMapping("/products")
 @CrossOrigin  // 解决跨域问题
 public class ProductController {
 
