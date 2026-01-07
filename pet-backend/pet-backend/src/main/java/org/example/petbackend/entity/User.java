@@ -30,6 +30,9 @@ public class User {
 
     private BigDecimal accountBalance; // 账户余额（默认0.00）
 
+    // 新增：待入账金额字段（和数据库字段对应）
+    private BigDecimal pendingAmount; // 待入账金额（默认0.00）
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime; // 创建时间（自动填充）
 

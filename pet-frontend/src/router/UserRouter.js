@@ -1,8 +1,7 @@
-// src/router/index.js
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
-  { path: '/', redirect: '/PetHome' }, // 默认跳转到新首页
+  { path: '/', redirect: '/PetHome' }, 
   {
     path: '/PetHome',
     component: () => import('../views/user/PetHome.vue'),
@@ -25,25 +24,29 @@ const routes = [
   },
   {
     path: '/policy-detail',
-    component: () => import('../views/user/PolicyDetail.vue'), // 新增保单详情页路由
+    component: () => import('../views/user/PolicyDetail.vue'),
     meta: { showFooter: false }
   },
   {
-    path: '/user/setting', // 需与跳转的path一致
-    name: 'UserSetting', // 若使用命名路由，name需匹配
-    component: () => import('../views/user/my/UserSetting.vue') // 路径需正确
+    path: '/user/setting',
+    name: 'UserSetting',
+    component: () => import('../views/user/my/UserSetting.vue')
   },
   {
-    path: '/pet-id-card', // 路由路径
-    name: 'PetIDCard', // 路由名称
-    component: () => import('../views/user/PetIDCard.vue') // 路径需正确
-  }
+    path: '/pet-id-card',
+    name: 'PetIDCard',
+    component: () => import('../views/user/PetIDCard.vue')
+  },
+    {
+    path: '/user/myorder',
+    name: 'UserOrder',
+    component: () => import('../views/user/my/MyOrder.vue')
+  },
 ]
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
-  // 滚动行为配置：跳转页面后默认滚动到顶部
   scrollBehavior (to, from, savedPosition) {
     if (savedPosition) {
       return savedPosition

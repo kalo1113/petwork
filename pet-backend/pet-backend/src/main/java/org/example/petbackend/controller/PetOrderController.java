@@ -1,23 +1,20 @@
 package org.example.petbackend.controller;
 
-import org.example.petbackend.common.Result; // 引入你的统一返回类
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.example.petbackend.common.Result;
 import org.example.petbackend.entity.PetOrderMain;
 import org.example.petbackend.entity.PetOrderItem;
+import org.example.petbackend.entity.Product;
 import org.example.petbackend.service.PetOrderMainService;
 import org.example.petbackend.service.PetOrderItemService;
+import org.example.petbackend.service.ProductService;
 import org.example.petbackend.service.UserService;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Random;
+import java.util.*;
+import java.util.Optional;
 
-/**
- * 订单控制器（统一风格版）
- * 适配项目Result返回、与用户表插入逻辑一致
- */
 @RestController
 @RequestMapping("/order")
 public class PetOrderController {
@@ -28,8 +25,10 @@ public class PetOrderController {
     private PetOrderItemService orderItemService;
     @Resource
     private UserService userService;
+    @Resource
+    private ProductService productService;
 
-    // 1. 创建订单（统一Result返回，与用户注册逻辑一致）
+    // 1. 创建订单（无需修改）
     @PostMapping("/create")
     public Result<?> createOrder(
             @RequestParam Integer userId,
@@ -38,46 +37,38 @@ public class PetOrderController {
             @RequestParam String receiverPhone,
             @RequestParam String receiverAddress) {
 
-        // 1. 校验用户是否存在
         if (userService.getById(userId) == null) {
             return Result.fail("用户不存在，无法创建订单");
         }
 
-        // 2. 校验商品列表是否为空
         if (itemList == null || itemList.isEmpty()) {
             return Result.fail("请选择要购买的商品");
         }
 
-        // 3. 生成订单ID（毕设简化版：时间戳+随机数）
         long orderId = System.currentTimeMillis() + new Random().nextInt(1000);
 
-        // 4. 计算订单总金额 + 绑定订单ID到商品明细
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (PetOrderItem item : itemList) {
-            item.setOrderId(orderId); // 每个商品绑定订单ID
-            totalAmount = totalAmount.add(item.getItemAmount()); // 累加商品小计
+            item.setOrderId(orderId);
+            totalAmount = totalAmount.add(item.getItemAmount());
         }
 
-        // 5. 构建订单主表对象（简洁赋值，与用户表一致）
         PetOrderMain orderMain = new PetOrderMain();
         orderMain.setOrderId(orderId);
         orderMain.setUserId(userId);
         orderMain.setTotalAmount(totalAmount);
-        orderMain.setOrderStatus(0); // 0=待付款
+        orderMain.setOrderStatus(1);
         orderMain.setReceiverName(receiverName);
         orderMain.setReceiverPhone(receiverPhone);
         orderMain.setReceiverAddress(receiverAddress);
 
-        // 6. 插入订单主表（与userService.save(user)完全一致）
         boolean saveMain = orderMainService.save(orderMain);
         if (!saveMain) {
             return Result.fail("订单创建失败，请稍后重试");
         }
 
-        // 7. 批量插入商品明细（使用MP通用saveBatch，与主表插入风格统一）
         boolean saveItems = orderItemService.saveBatch(itemList);
         if (!saveItems) {
-            // 回滚主表插入（毕设简易处理：删除已插入的主表数据）
             orderMainService.removeById(orderId);
             return Result.fail("订单商品明细创建失败");
         }
@@ -85,38 +76,118 @@ public class PetOrderController {
         return Result.success(orderId, "订单创建成功，订单ID：" + orderId);
     }
 
-    // 2. 查询用户的订单列表（统一Result返回）
+    // 2. 查询用户的订单列表（核心修复：添加productDescription + 调试日志）
     @GetMapping("/list")
     public Result<?> getOrderList(@RequestParam Integer userId) {
-        // 校验用户
         if (userService.getById(userId) == null) {
             return Result.fail("用户不存在");
         }
 
-        // 查询订单列表（按创建时间倒序）
-        List<PetOrderMain> orderList = orderMainService.lambdaQuery()
+        List<PetOrderMain> orderMainList = orderMainService.lambdaQuery()
                 .eq(PetOrderMain::getUserId, userId)
                 .orderByDesc(PetOrderMain::getCreateTime)
                 .list();
 
-        return Result.success(orderList, "订单列表查询成功");
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        for (PetOrderMain order : orderMainList) {
+            Map<String, Object> orderMap = new HashMap<>();
+            orderMap.put("orderId", order.getOrderId());
+            orderMap.put("userId", order.getUserId());
+            orderMap.put("totalAmount", order.getTotalAmount());
+            orderMap.put("orderStatus", order.getOrderStatus());
+            orderMap.put("receiverName", order.getReceiverName());
+            orderMap.put("receiverPhone", order.getReceiverPhone());
+            orderMap.put("receiverAddress", order.getReceiverAddress());
+            orderMap.put("createTime", order.getCreateTime());
+            orderMap.put("updateTime", order.getUpdateTime());
+
+            List<PetOrderItem> rawItemList = orderItemService.lambdaQuery()
+                    .eq(PetOrderItem::getOrderId, order.getOrderId())
+                    .list();
+
+            List<Map<String, Object>> itemMapList = new ArrayList<>();
+            for (PetOrderItem item : rawItemList) {
+                Map<String, Object> itemMap = new HashMap<>();
+                itemMap.put("productId", item.getProductId());
+                itemMap.put("productCount", item.getProductCount());
+                itemMap.put("productPrice", item.getProductPrice());
+                itemMap.put("itemAmount", item.getItemAmount());
+
+                // 关联查询商品信息
+                Product product = productService.getProductById(item.getProductId());
+                if (product != null) {
+                    // 新增：调试日志（关键）
+                    System.out.println("【列表接口】商品ID：" + item.getProductId() +
+                            "，标题：" + product.getTitle() +
+                            "，介绍：" + product.getDescription());
+
+                    itemMap.put("productTitle", product.getTitle());
+                    itemMap.put("productImgPath", product.getImgPath());
+                    itemMap.put("productNowPrice", product.getNowPrice());
+                    itemMap.put("productOldPrice", product.getOldPrice());
+                    // 核心修复：添加商品介绍字段 + 空值兜底
+                    itemMap.put("productDescription", Optional.ofNullable(product.getDescription()).orElse("暂无介绍"));
+                } else {
+                    // 商品不存在时的兜底
+                    itemMap.put("productTitle", "商品已下架");
+                    itemMap.put("productImgPath", "");
+                    itemMap.put("productNowPrice", "0.00");
+                    itemMap.put("productOldPrice", "0.00");
+                    itemMap.put("productDescription", "商品已下架，暂无介绍");
+                }
+                itemMapList.add(itemMap);
+            }
+
+            orderMap.put("itemList", itemMapList);
+            resultList.add(orderMap);
+        }
+
+        return Result.success(resultList, "订单列表查询成功");
     }
 
-    // 3. 查询订单详情（主表+商品明细，统一Result返回）
+    // 3. 查询订单详情（优化：添加空值兜底）
     @GetMapping("/detail")
     public Result<?> getOrderDetail(@RequestParam Long orderId) {
-        // 1. 查询订单主表
         PetOrderMain orderMain = orderMainService.getById(orderId);
         if (orderMain == null) {
             return Result.fail("订单不存在");
         }
 
-        // 2. 查询订单商品明细
-        List<PetOrderItem> itemList = orderItemService.lambdaQuery()
+        List<PetOrderItem> rawItemList = orderItemService.lambdaQuery()
                 .eq(PetOrderItem::getOrderId, orderId)
                 .list();
 
-        // 3. 组装返回数据
+        List<Map<String, Object>> itemList = new ArrayList<>();
+        for (PetOrderItem item : rawItemList) {
+            Map<String, Object> itemMap = new HashMap<>();
+            itemMap.put("orderId", item.getOrderId());
+            itemMap.put("productId", item.getProductId());
+            itemMap.put("productPrice", item.getProductPrice());
+            itemMap.put("productCount", item.getProductCount());
+            itemMap.put("itemAmount", item.getItemAmount());
+
+            Product product = productService.getProductById(item.getProductId());
+            if (product != null) {
+                System.out.println("【详情接口】商品ID：" + item.getProductId() +
+                        "，标题：" + product.getTitle() +
+                        "，介绍：" + product.getDescription());
+
+                itemMap.put("productTitle", product.getTitle());
+                itemMap.put("productImgPath", product.getImgPath());
+                itemMap.put("productNowPrice", product.getNowPrice());
+                itemMap.put("productOldPrice", product.getOldPrice());
+                // 优化：空值兜底
+                itemMap.put("productDescription", Optional.ofNullable(product.getDescription()).orElse("暂无介绍"));
+            } else {
+                itemMap.put("productTitle", "商品已下架");
+                itemMap.put("productImgPath", "");
+                itemMap.put("productNowPrice", "0.00");
+                itemMap.put("productOldPrice", "0.00");
+                itemMap.put("productDescription", "商品已下架，暂无介绍");
+            }
+            itemList.add(itemMap);
+        }
+
         Map<String, Object> orderDetail = new HashMap<>();
         orderDetail.put("orderMain", orderMain);
         orderDetail.put("itemList", itemList);
@@ -124,24 +195,21 @@ public class PetOrderController {
         return Result.success(orderDetail, "订单详情查询成功");
     }
 
-    // 4. 更新订单状态（模拟付款/发货/收货，统一Result返回）
+    // 4. 更新订单状态（无需修改）
     @PostMapping("/updateStatus")
     public Result<?> updateOrderStatus(
             @RequestParam Long orderId,
             @RequestParam Integer status) {
 
-        // 1. 校验订单状态合法性
         if (status < 0 || status > 4) {
             return Result.fail("订单状态不合法（0=待付款 1=待发货 2=待收货 3=已完成 4=已取消）");
         }
 
-        // 2. 查询订单
         PetOrderMain orderMain = orderMainService.getById(orderId);
         if (orderMain == null) {
             return Result.fail("订单不存在");
         }
 
-        // 3. 更新订单状态（简洁赋值，与用户表更新逻辑一致）
         orderMain.setOrderStatus(status);
         boolean updateSuccess = orderMainService.updateById(orderMain);
 
@@ -149,7 +217,6 @@ public class PetOrderController {
             return Result.fail("订单状态更新失败");
         }
 
-        // 状态说明
         String statusDesc = switch (status) {
             case 0 -> "待付款";
             case 1 -> "待发货";
@@ -160,5 +227,23 @@ public class PetOrderController {
         };
 
         return Result.success(null, "订单状态已更新为：" + statusDesc);
+    }
+
+    // 5. 新增：删除订单（修复后）
+    @PostMapping("/delete")
+    public Result<?> deleteOrder(@RequestParam Long orderId) {
+        // 1. 删除订单明细表（使用MyBatis-Plus的Wrappers构造条件）
+        boolean deleteItems = orderItemService.remove(
+                Wrappers.<PetOrderItem>lambdaQuery().eq(PetOrderItem::getOrderId, orderId)
+        );
+
+        // 2. 删除订单主表
+        boolean deleteMain = orderMainService.removeById(orderId);
+
+        if (deleteItems && deleteMain) {
+            return Result.success(null, "订单删除成功");
+        } else {
+            return Result.fail("订单删除失败");
+        }
     }
 }

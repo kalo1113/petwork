@@ -286,10 +286,8 @@
             <div class="cart-list">
               <div
                 class="cart-item"
-                v-for="(item, index) in cartList"
+                v-for="(item) in cartList"
                 :key="item.productId"
-                @touchmove="handleTouchMove($event, index)"
-                @touchend="handleTouchEnd(index)"
                 :style="{ transform: `translateX(-${item.swipeDistance}px)` }"
               >
                 <!-- 商品选择框（仅前端展示，不调用后端） -->
@@ -487,7 +485,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router' // 新增：引入路由
 import { getProductList } from '@/api/user/index.js'
 // 引入封装的购物车接口（移除toggleCartSelect）
@@ -499,11 +497,11 @@ import {
 } from '@/api/user/index.js' 
 // 新增：引入订单接口和地址接口
 import { createOrder } from '@/api/user/index.js'
-import { getDefaultReceiverAddress, getReceiverAddressList } from '@/api/user/index.js'
+import { getDefaultReceiverAddress, getReceiverAddressList, getUserAmountInfo, deductWalletBalance } from '@/api/user/index.js'
 import { ElMessage, ElMessageBox } from 'element-plus' 
 
 // 模拟登录用户ID（实际项目中从登录态获取）
-const userId = ref(1) 
+const userId = ref('') 
 // 新增：路由实例
 const router = useRouter()
 
@@ -542,6 +540,32 @@ const defaultAddress = ref({}) // 只存储默认地址
 const isAddressLoaded = ref(false) // 标记地址是否已加载
 const addressModalVisible = ref(false) // 地址弹窗是否显示
 const allAddressList = ref([]) // 所有可选地址列表（用于弹窗选择）
+
+// 新增：初始化用户ID（从localStorage解析登录态）
+const initUserId = () => {
+  try {
+    const userDataStr = localStorage.getItem('userData')
+    if (!userDataStr) {
+      ElMessage.warning('未检测到登录信息，请先登录')
+      router.push('/login') // 未登录跳转到登录页
+      return
+    }
+    const userData = JSON.parse(userDataStr)
+    // 兼容 userId/user_id 两种字段名
+    const parsedUserId = Number(userData.userId || userData.user_id)
+    if (isNaN(parsedUserId) || parsedUserId <= 0) {
+      ElMessage.error('用户ID解析失败，请重新登录')
+      router.push('/login')
+      return
+    }
+    userId.value = parsedUserId
+    console.log('✅ 当前登录用户ID：', userId.value) // 验证是否为4
+  } catch (err) {
+    ElMessage.error('用户信息解析异常，请重新登录')
+    console.error('解析userData失败：', err)
+    router.push('/login')
+  }
+}
 
 // 返回顶部
 const handleTopClick = () => {
@@ -595,40 +619,68 @@ const loadProducts = async () => {
   }
 }
 
-// 加载购物车数据（从后端拉取，适配数据库下划线字段）
+// 加载购物车数据（兼容后端Map/实体类、下划线/驼峰字段）
 const loadCartList = async () => {
   try {
-    // 校验userId是否为有效数字
+    // 1. 基础校验：用户ID有效性（使用动态的userId.value）
     const userIdNum = Number(userId.value)
-    if (isNaN(userIdNum)) {
+    if (isNaN(userIdNum) || userIdNum <= 0) {
+      cartList.value = []
       return ElMessage.error('用户ID异常，请检查登录状态')
     }
+
+    console.log('🔍 请求购物车的用户ID：', userIdNum) // 验证是4
+
+    // 2. 调用接口获取购物车数据
     const cartData = await getCartList(userIdNum)
-    // 增加空值判断，确保cartData是数组
-    if (!Array.isArray(cartData)) {
+    
+    // 3. 空值/格式兜底：确保cartData是数组
+    if (!cartData || !Array.isArray(cartData)) {
       cartList.value = []
-      return ElMessage.warning('购物车数据格式异常')
+      return ElMessage.warning('购物车为空或数据格式异常')
     }
-    // 适配后端返回的Map格式（数据库下划线字段→前端驼峰）
-    cartList.value = cartData.map(item => ({
-      cartId: item.cart_id || item.cartId || '', // 匹配后端返回的cart_id
-      productId: item.product_id || item.productId || '', // 匹配product_id
-      title: item.title || '未知商品', // 需后端关联商品表返回
-      oldPrice: item.old_price || item.oldPrice || '0.00', // 匹配old_price
-      nowPrice: item.now_price || item.nowPrice || '0.00', // 匹配now_price
-      imgPath: item.img_path || item.imgPath || '', // 匹配img_path
-      count: item.product_count || item.count || 1, // 匹配product_count
-      swipeDistance: 0, // 前端左滑字段
-      checked: true // 选中状态仅前端维护，默认选中
-    }))
+
+    // 4. 核心：适配所有字段格式（下划线/驼峰、Map/实体类）
+    cartList.value = cartData.map(item => {
+      // 先把item转为对象（防止后端返回非对象格式）
+      const cartItem = item || {}
+      
+      // 兼容逻辑：优先取下划线字段，再取驼峰字段，最后给默认值
+      return {
+        // 购物车ID（兼容cart_id/cartId）
+        cartId: cartItem.cart_id || cartItem.cartId || '',
+        // 商品ID（兼容product_id/productId）
+        productId: cartItem.product_id || cartItem.productId || '',
+        // 商品标题（兼容title/name，后端可能返回name）
+        title: cartItem.title || cartItem.name || '未知商品',
+        // 原价（兼容old_price/oldPrice/oriPrice）
+        oldPrice: cartItem.old_price || cartItem.oldPrice || cartItem.oriPrice || '0.00',
+        // 现价（兼容now_price/nowPrice/currentPrice）
+        nowPrice: cartItem.now_price || cartItem.nowPrice || cartItem.currentPrice || '0.00',
+        // 商品图片（兼容img_path/imgPath/photo）
+        imgPath: cartItem.img_path || cartItem.imgPath || cartItem.photo || '',
+        // 商品数量（兼容product_count/count/num）
+        count: cartItem.product_count || cartItem.count || cartItem.num || 1,
+        // 前端左滑字段（固定）
+        swipeDistance: 0,
+        // 选中状态（固定，默认选中）
+        checked: true
+      }
+    })
+
+    // 5. 空数据提示（友好交互）
+    if (cartList.value.length === 0) {
+      ElMessage.info('您的购物车为空，快去添加商品吧～')
+    }
   } catch (err) {
+    // 6. 异常兜底：清空购物车+提示
+    cartList.value = []
     ElMessage.error('获取购物车失败，请重试')
     console.error('加载购物车失败：', err)
-    cartList.value = []
   }
 }
 
-// ========== 修改：加载默认地址（移除列表逻辑） ==========
+// ========== 修改：加载默认地址 ==========
 const loadDefaultAddress = async () => {
   // 前置校验
   if (isAddressLoaded.value) {
@@ -640,25 +692,13 @@ const loadDefaultAddress = async () => {
     return
   }
 
-  // 读取用户ID（从localStorage取，确保和测试逻辑一致）
-  let userIdNum = ''
-  try {
-    const userData = localStorage.getItem('userData')
-    if (!userData) {
-      console.log('❌ 无用户信息，请先登录')
-      return
-    }
-    const userInfo = JSON.parse(userData)
-    userIdNum = Number(userInfo.userId)
-    if (isNaN(userIdNum)) {
-      console.log('❌ 用户ID异常：', userInfo.userId)
-      return
-    }
-    console.log('✅ 解析到用户ID：', userIdNum)
-  } catch (err) {
-    console.error('❌ 读取用户ID失败：', err)
+  // 直接使用动态的userId.value，无需重复解析
+  const userIdNum = Number(userId.value)
+  if (isNaN(userIdNum)) {
+    console.log('❌ 用户ID异常：', userId.value)
     return
   }
+  console.log('✅ 解析到用户ID：', userIdNum)
 
   // 调用默认地址接口（复用测试成功的逻辑）
   try {
@@ -812,9 +852,9 @@ const handleSearch = () => {
 
 const addToCartHandler = async (product) => {
   try {
-    // 【关键修复】先缓存参数，避免后续product被篡改
+    // 【关键修复】使用动态的userId.value
     const cacheProductId = product.id; 
-    const cacheUserId = userId.value;
+    const cacheUserId = userId.value; // 此时是4，而非硬编码的1
 
     // 打印缓存的参数（验证此时还是对的）
     console.log('缓存的参数：', {
@@ -913,7 +953,7 @@ const deleteCartItemHandler = async (cartId) => {
   }
 }
 
-// 结算事件（完整版：写入数据库 + 默认地址逻辑）
+// 结算事件（完整版：写入数据库 + 默认地址逻辑 + 钱包余额校验 + 余额扣减）
 const handleCheckout = async () => {
   // 1. 基础校验：选商品
   if (selectedCount.value === 0) {
@@ -946,7 +986,51 @@ const handleCheckout = async () => {
     return
   }
 
-  // 4. 提取默认地址信息（兜底默认值）
+  // ===== 步骤3.5 校验钱包余额 =====
+  let walletBalance = 0 // 保存余额，后续扣款用
+  const payAmount = Number(totalNowPrice.value) // 结算金额
+  try {
+    // 调用获取钱包余额接口
+    const amountRes = await getUserAmountInfo(userIdNum)
+    if (!amountRes || amountRes.code !== 200 || !amountRes.data) {
+      ElMessage.error('查询钱包余额失败，请重试')
+      return
+    }
+    walletBalance = Number(amountRes.data.accountBalance || 0)
+
+    // 余额不足判断
+    if (walletBalance < payAmount) {
+      try {
+        await ElMessageBox.confirm(
+          `您的钱包余额不足！<br/>
+          需支付¥${payAmount.toFixed(2)}，当前余额¥${walletBalance.toFixed(2)}<br/>
+          是否前往钱包充值？`,
+          '余额不足',
+          {
+            confirmButtonText: '去充值',
+            cancelButtonText: '取消',
+            type: 'warning',
+            dangerouslyUseHTMLString: true
+          }
+        )
+        // 跳转到你的钱包页面
+        router.push({
+          path: '/user/myorder',
+          query: { activeTab: 'wallet' }
+        })
+        return
+      } catch (cancelErr) {
+        ElMessage.info('已取消结算')
+        return
+      }
+    }
+  } catch (balanceErr) {
+    console.error('查询钱包余额异常：', balanceErr)
+    ElMessage.error('查询钱包余额失败，结算终止')
+    return
+  }
+
+  // 4. 提取默认地址信息
   const receiverName = defaultAddress.value.receiverName || '测试收货人'
   const receiverPhone = defaultAddress.value.receiverPhone || '13800138000'
   const receiverAddress = defaultAddress.value.receiverProvince 
@@ -954,30 +1038,27 @@ const handleCheckout = async () => {
     : '北京市朝阳区测试地址'
 
   // 5. 二次确认
-
-try {
-  // 先拼接好地址文本，避免模板字符串缩进干扰
-  const addressText = `收货地址：<br/>${receiverName} ${receiverPhone}<br/>${receiverAddress}`;
-  const redPrice = (price) => `<span style="color: #f56c6c; font-weight: 600;">${price}</span>`
-  await ElMessageBox.confirm(
-    `${addressText}<br/><br/>
-    确认结算${selectedCount.value}件商品？<br/>
-    原价¥${totalOldPrice.value.toFixed(2)}，医保减免：¥${insuranceReduce.value.toFixed(2)}
-    <br/>合计¥${redPrice(totalNowPrice.value.toFixed(2))}<br/>
-    
-    `,
-    '结算确认',
-    {
-      confirmButtonText: '确认结算',
-      cancelButtonText: '取消',
-      type: 'info',
-      dangerouslyUseHTMLString: true // 关键：允许解析 HTML 标签
-    }
-  )
-} catch (error) {
-  ElMessage.info('已取消结算')
-  return
-}
+  try {
+    const addressText = `收货地址：<br/>${receiverName} ${receiverPhone}<br/>${receiverAddress}`;
+    const redPrice = (price) => `<span style="color: #f56c6c; font-weight: 600;">${price}</span>`
+    await ElMessageBox.confirm(
+      `${addressText}<br/><br/>
+      确认结算${selectedCount.value}件商品？<br/>
+      原价¥${totalOldPrice.value.toFixed(2)}，医保减免：¥${insuranceReduce.value.toFixed(2)}
+      <br/>合计¥${redPrice(payAmount.toFixed(2))}<br/>
+      `,
+      '结算确认',
+      {
+        confirmButtonText: '确认结算',
+        cancelButtonText: '取消',
+        type: 'info',
+        dangerouslyUseHTMLString: true
+      }
+    )
+  } catch (error) {
+    ElMessage.info('已取消结算')
+    return
+  }
 
   // 6. 构造订单商品列表
   const orderItemList = cartList.value
@@ -985,27 +1066,55 @@ try {
     .map(item => ({
       productId: Number(item.productId),
       productTitle: item.title,
-      productImg: item.imgPath,
       productPrice: Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0),
       productCount: item.count,
       itemAmount: Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0) * item.count
     }))
 
-  // 7. 调用创建订单接口
+  // 7. 核心业务：创建订单 + 扣减钱包余额（事务级操作）
   try {
-    const res = await createOrder(
+    // 7.1 先创建订单
+    const orderRes = await createOrder(
       userIdNum,
       orderItemList,
       receiverName,
       receiverPhone,
       receiverAddress
     )
-    ElMessage.success(`订单创建成功！订单ID：${res.data || '未知'}`)
+    if (!orderRes || orderRes.code !== 200) {
+      throw new Error('创建订单失败')
+    }
+
+    // 7.2 关键：扣减钱包余额（调用扣款接口）
+    const deductRes = await deductWalletBalance(userIdNum, payAmount)
+    if (!deductRes || deductRes.code !== 200) {
+      // 若扣款失败，需要回滚订单（根据你的后端逻辑调整）
+      throw new Error('钱包扣款失败，订单已取消')
+    }
+
+    // 7.3 所有操作成功：提示 + 更新状态
+    ElMessage.success(`订单创建成功！订单ID：${orderRes.data || '未知'}，钱包已扣款¥${payAmount.toFixed(2)}`)
     
-    // 8. 结算成功后重置
+    // 8. 清理购物车
+    const checkedCartIds = cartList.value
+      .filter(item => item.checked)
+      .map(item => item.cartId)
+    
+    if (checkedCartIds.length > 0) {
+      for (const cartId of checkedCartIds) {
+        const cartIdNum = Number(cartId)
+        if (!isNaN(cartIdNum)) {
+          await deleteCartItem(cartIdNum)
+        }
+      }
+      await loadCartList()
+    }
+
+    // 9. 重置状态
     cartList.value.forEach(item => item.checked = false)
     calculateTotal()
     isCartOpen.value = false
+
   } catch (err) {
     console.error('结算失败详情：', err)
     ElMessage.error(`结算失败：${err.msg || err.message || '服务器异常'}`)
@@ -1055,9 +1164,15 @@ watch(selectedCount, (newVal) => {
 
 // 页面生命周期
 onMounted(async () => {
-  // 先加载商品，再加载购物车
-  await loadProducts()
-  await loadCartList() // 初始化加载购物车
+  // 第一步：先初始化正确的用户ID
+  initUserId()
+  
+  // 等待userId初始化完成后再加载商品和购物车
+  if (userId.value) {
+    await loadProducts()
+    await loadCartList() // 此时请求的是用户4的购物车
+  }
+  
   initItemWidth()
   window.addEventListener('resize', initItemWidth)
   const checkProductsLoaded = setInterval(() => {
@@ -1066,10 +1181,6 @@ onMounted(async () => {
       clearInterval(checkProductsLoaded)
     }
   }, 100)
-})
-onUnmounted(() => {
-  stopCarousel()
-  window.removeEventListener('resize', initItemWidth)
 })
 </script>
 

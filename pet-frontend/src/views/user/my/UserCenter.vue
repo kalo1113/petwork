@@ -91,28 +91,28 @@
       <!-- 我的订单、宠物保障等原有模块保持不变 -->
       <div class="my-orders white-bg">
         <h3>我的订单</h3>
-        <div class="order-tabs">
-          <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/已生效.svg" alt="已生效" class="order-icon" />
-            <span>已生效</span>
-          </div>
-          <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/我的钱包.svg" alt="我的钱包" class="order-icon" />
-            <span>我的钱包</span>
-          </div>
-          <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
-            <span>待发货</span>
-          </div>
-          <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/待收货.svg" alt="待收货" class="order-icon" />
-            <span>待收货</span>
-          </div>
-          <div class="tab-item" @click="handleOrderTabClick">
-            <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
-            <span>待评价</span>
-          </div>
-        </div>
+<div class="order-tabs">
+  <div class="tab-item" @click="handleOrderTabClick('effective')">
+    <img src="@/assets/images/我的图标/已生效.svg" alt="已生效" class="order-icon" />
+    <span>已生效</span>
+  </div>
+  <div class="tab-item" @click="handleOrderTabClick('wallet')">
+    <img src="@/assets/images/我的图标/我的钱包.svg" alt="我的钱包" class="order-icon" />
+    <span>我的钱包</span>
+  </div>
+  <div class="tab-item" @click="handleOrderTabClick('deliver')">
+    <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
+    <span>待发货</span>
+  </div>
+  <div class="tab-item" @click="handleOrderTabClick('receive')">
+    <img src="@/assets/images/我的图标/待收货.svg" alt="待收货" class="order-icon" />
+    <span>待收货</span>
+  </div>
+  <div class="tab-item" @click="handleOrderTabClick('comment')">
+    <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
+    <span>待评价</span>
+  </div>
+</div>
       </div>
 
       <div class="pet-guarantee white-bg">
@@ -431,12 +431,20 @@ const handleAddPetClick = () => {
     ElMessage.error('页面跳转失败，请重试')
   }
 }
-const handleOrderTabClick = () => {
+
+const handleOrderTabClick = (tabKey) => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
     return
   }
-  ElMessage.info('查看订单列表')
+  // 跳转到订单列表页面，并传递选中的选项卡参数
+  router.push({
+    path: '/user/myorder', // 假设新订单页面的路由路径是/my-orders（需和路由配置一致）
+    query: { activeTab: tabKey } // 传递选项卡标识
+  }).catch(err => {
+    console.error('跳转订单页面失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  })
 }
 const handleGuaranteeClick = () => {
   if (!userInfo.value.isLogin) {

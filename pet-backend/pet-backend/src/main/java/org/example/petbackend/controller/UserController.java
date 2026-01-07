@@ -37,7 +37,7 @@ public class UserController {
     @Value("${upload.avatar-access-path}")
     private String avatarAccessPath;
 
-    // ========== 注册接口（适配User实体） ==========
+    // ========== 注册接口（适配User实体，新增待入账金额初始化） ==========
     @PostMapping("/register")
     public Result<User> registerUser(@Valid @RequestBody User user, BindingResult bindingResult) {
         // 1. 参数校验错误（如邮箱格式、非空）→ 400
@@ -55,9 +55,12 @@ public class UserController {
             return Result.failConflict("该邮箱已被注册");
         }
 
-        // 3. 初始化默认值（适配User实体字段）
+        // 3. 初始化默认值（适配User实体字段，新增待入账金额初始化）
         if (user.getAccountBalance() == null) {
             user.setAccountBalance(BigDecimal.ZERO); // 余额默认0
+        }
+        if (user.getPendingAmount() == null) {
+            user.setPendingAmount(BigDecimal.ZERO); // 待入账金额默认0
         }
 
         // 4. 数据库插入
@@ -257,6 +260,167 @@ public class UserController {
         }
     }
 
+    // ========== 新增：用户钱包充值接口 ==========
+    @PostMapping("/recharge")
+    public Result<User> rechargeWallet(@RequestBody Map<String, Object> paramMap) {
+        // 1. 解析参数
+        Integer userId = (Integer) paramMap.get("userId");
+        BigDecimal amount = new BigDecimal(paramMap.get("amount").toString());
+
+        // 2. 参数校验
+        if (userId == null) {
+            return Result.failParam("用户ID不能为空");
+        }
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Result.failParam("充值金额必须大于0");
+        }
+
+        // 3. 查询用户
+        User user = userService.getById(userId);
+        if (user == null) {
+            log.error("充值失败：用户不存在，userId={}", userId);
+            return Result.failNotFound("用户不存在");
+        }
+
+        // 4. 执行充值（累加账户余额）
+        user.setAccountBalance(user.getAccountBalance().add(amount));
+        boolean success = userService.updateById(user);
+
+        if (success) {
+            log.info("用户充值成功：userId={}，充值金额={}，当前余额={}", userId, amount, user.getAccountBalance());
+            return Result.success(user, "充值成功");
+        } else {
+            log.error("用户充值失败：userId={}，充值金额={}", userId, amount);
+            return Result.fail("充值失败，请稍后重试");
+        }
+    }
+
+    // ========== 新增：查询用户金额信息（余额+待入账） ==========
+    @GetMapping("/amount/{userId}")
+    public Result<Map<String, BigDecimal>> getUserAmountInfo(@PathVariable Integer userId) {
+        // 1. 查询用户
+        User user = userService.getById(userId);
+        if (user == null) {
+            return Result.failNotFound("用户不存在");
+        }
+
+        // 2. 组装金额信息
+        Map<String, BigDecimal> amountInfo = Map.of(
+                "accountBalance", user.getAccountBalance() == null ? BigDecimal.ZERO : user.getAccountBalance(),
+                "pendingAmount", user.getPendingAmount() == null ? BigDecimal.ZERO : user.getPendingAmount()
+        );
+
+        return Result.success(amountInfo, "查询金额信息成功");
+    }
+
+    // ========== 新增：更新待入账金额接口（如退款、奖励到账等场景） ==========
+    @PostMapping("/updatePendingAmount")
+    public Result<User> updatePendingAmount(@RequestBody Map<String, Object> paramMap) {
+        // 1. 解析参数
+        Integer userId = (Integer) paramMap.get("userId");
+        BigDecimal pendingAmount = new BigDecimal(paramMap.get("pendingAmount").toString());
+
+        // 2. 参数校验
+        if (userId == null) {
+            return Result.failParam("用户ID不能为空");
+        }
+        if (pendingAmount == null) {
+            return Result.failParam("待入账金额不能为空");
+        }
+
+        // 3. 查询用户
+        User user = userService.getById(userId);
+        if (user == null) {
+            log.error("更新待入账金额失败：用户不存在，userId={}", userId);
+            return Result.failNotFound("用户不存在");
+        }
+
+        // 4. 更新待入账金额
+        user.setPendingAmount(pendingAmount);
+        boolean success = userService.updateById(user);
+
+        if (success) {
+            log.info("用户待入账金额更新成功：userId={}，待入账金额={}", userId, pendingAmount);
+            return Result.success(user, "待入账金额更新成功");
+        } else {
+            log.error("用户待入账金额更新失败：userId={}，待入账金额={}", userId, pendingAmount);
+            return Result.fail("待入账金额更新失败，请稍后重试");
+        }
+    }
+
+    // ========== 新增：待入账金额转正式余额接口（如提现审核通过） ==========
+    @PostMapping("/pendingToBalance/{userId}")
+    public Result<User> pendingToBalance(@PathVariable Integer userId) {
+        // 1. 查询用户
+        User user = userService.getById(userId);
+        if (user == null) {
+            return Result.failNotFound("用户不存在");
+        }
+
+        // 2. 校验待入账金额
+        BigDecimal pendingAmount = user.getPendingAmount() == null ? BigDecimal.ZERO : user.getPendingAmount();
+        if (pendingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Result.failParam("暂无待入账金额可转入");
+        }
+
+        // 3. 待入账金额转入余额
+        user.setAccountBalance(user.getAccountBalance().add(pendingAmount));
+        user.setPendingAmount(BigDecimal.ZERO); // 清空待入账金额
+        boolean success = userService.updateById(user);
+
+        if (success) {
+            log.info("用户待入账金额转入余额成功：userId={}，转入金额={}", userId, pendingAmount);
+            return Result.success(user, "待入账金额已成功转入账户余额");
+        } else {
+            log.error("用户待入账金额转入余额失败：userId={}，转入金额={}", userId, pendingAmount);
+            return Result.fail("待入账金额转入失败，请稍后重试");
+        }
+    }
+    // ========== 新增：钱包扣款接口（结算时扣减余额） ==========
+    @PostMapping("/deductBalance")
+    public Result<User> deductWalletBalance(@RequestBody Map<String, Object> paramMap) {
+// 解析参数
+        Integer userId = (Integer) paramMap.get("userId");
+        Object amountObj = paramMap.get("amount");
+
+// 参数校验
+        if (userId == null) {
+            return Result.failParam("用户ID不能为空");
+        }
+        if (amountObj == null) {
+            return Result.failParam("扣款金额不能为空");
+        }
+        BigDecimal amount = new BigDecimal(amountObj.toString());
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Result.failParam("扣款金额必须大于0");
+        }
+
+        // 3. 查询用户（加锁查询，防止并发扣款导致余额异常）
+        User user = userService.getById(userId);
+        if (user == null) {
+            log.error("扣款失败：用户不存在，userId={}", userId);
+            return Result.failNotFound("用户不存在");
+        }
+
+        // 4. 校验余额是否充足
+        BigDecimal currentBalance = user.getAccountBalance() == null ? BigDecimal.ZERO : user.getAccountBalance();
+        if (currentBalance.compareTo(amount) < 0) {
+            log.error("扣款失败：余额不足，userId={}，扣款金额={}，当前余额={}", userId, amount, currentBalance);
+            return Result.fail("余额不足，扣款失败");
+        }
+
+        // 5. 执行扣款（扣减账户余额）
+        user.setAccountBalance(currentBalance.subtract(amount));
+        boolean success = userService.updateById(user);
+
+        if (success) {
+            log.info("用户扣款成功：userId={}，扣款金额={}，当前余额={}", userId, amount, user.getAccountBalance());
+            return Result.success(user, "扣款成功");
+        } else {
+            log.error("用户扣款失败：userId={}，扣款金额={}", userId, amount);
+            return Result.fail("扣款失败，请稍后重试");
+        }
+    }
     // ========== 补充：获取用户ByEmail方法（适配UserService） ==========
     public User getUserByEmail(String email) {
         return userService.getOne(new QueryWrapper<User>().eq("email", email));

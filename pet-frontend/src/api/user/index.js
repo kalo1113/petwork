@@ -78,6 +78,124 @@ export const getUserInfo = (userId) => {
   return userAxios.get(`/user/${userId}`)
 }
 
+// ========== 新增：金额相关接口 ==========
+// 钱包充值
+export const rechargeWallet = async (userId, amount) => {
+  // 参数校验
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法充值')
+    throw new Error('userId不是有效数字')
+  }
+  if (isNaN(Number(amount)) || Number(amount) <= 0) {
+    ElMessage.error('充值金额必须大于0')
+    throw new Error('充值金额不合法')
+  }
+  // 发起充值请求
+  return userAxios.post('/user/recharge', {
+    userId: Number(userId),
+    amount: Number(amount)
+  }, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 查询用户金额信息（余额+待入账）
+export const getUserAmountInfo = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询金额信息')
+    throw new Error('userId不是有效数字')
+  }
+  return userAxios.get(`/user/amount/${userId}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 更新待入账金额（管理员/系统场景）
+export const updatePendingAmount = async (userId, pendingAmount) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法更新待入账金额')
+    throw new Error('userId不是有效数字')
+  }
+  if (isNaN(Number(pendingAmount))) {
+    ElMessage.error('待入账金额不合法')
+    throw new Error('pendingAmount不是有效数字')
+  }
+  return userAxios.post('/user/updatePendingAmount', {
+    userId: Number(userId),
+    pendingAmount: Number(pendingAmount)
+  }, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 待入账金额转正式余额
+export const pendingToBalance = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法转入金额')
+    throw new Error('userId不是有效数字')
+  }
+  return userAxios.post(`/user/pendingToBalance/${userId}`, {}, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 钱包扣款（结算时扣减余额）
+export const deductWalletBalance = async (userId, amount) => {
+  // 前端参数前置校验
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法扣款')
+    throw new Error('userId不是有效数字')
+  }
+  if (isNaN(Number(amount)) || Number(amount) <= 0) {
+    ElMessage.error('扣款金额必须大于0')
+    throw new Error('扣款金额不合法')
+  }
+  // 发起扣款请求
+  return userAxios.post('/user/deductBalance', {
+    userId: Number(userId),
+    amount: Number(amount)
+  }, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 修改昵称
+export const updateNickname = async (userId, username) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法修改昵称')
+    throw new Error('userId不是有效数字')
+  }
+  if (!username || username.trim().length === 0) {
+    ElMessage.error('昵称不能为空')
+    throw new Error('昵称不能为空')
+  }
+  return userAxios.post('/user/updateNickname', {
+    userId: Number(userId),
+    username: username.trim()
+  }, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 修改密码
+export const updatePassword = async (userId, oldPassword, newPassword) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法修改密码')
+    throw new Error('userId不是有效数字')
+  }
+  if (!oldPassword || !newPassword) {
+    ElMessage.error('原密码和新密码不能为空')
+    throw new Error('密码不能为空')
+  }
+  return userAxios.post('/user/updatePassword', {
+    userId: Number(userId),
+    oldPassword: oldPassword,
+    newPassword: newPassword
+  }, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
 // ===================== 宠物接口 =====================
 // 前端 getPetListByUserId 接口修正
 export const getPetListByUserId = (userId) => {
@@ -136,21 +254,45 @@ export const getProductList = async () => {
   }
 }
 
-// ===================== 购物车接口 =====================
-// 1. 添加商品到购物车（修复参数校验逻辑）
-export const addToCart = async (userId, productId, count = 1) => {
-  // 直接使用传入的参数（页面层已校验过有效性）
-  const userIdNum = Number(userId)
-  const productIdNum = Number(productId)
-  const countNum = Number(count)
+// 【新增】校验商品ID是否存在（核心：替代下架状态，仅查是否存在）
+export const checkProductExist = async (productId) => {
+  if (isNaN(Number(productId))) {
+    ElMessage.error('商品ID异常，无法查询')
+    throw new Error('productId不是有效数字')
+  }
+  // 关键修改：从 /product/checkExist 改为 /products/checkExist
+  return productAxios.get('/products/checkExist', {
+    params: { productId: Number(productId) },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
 
-  // 现在参数是有效的，直接请求（移除多余的错误抛出）
-  return cartAxios.post('/cart/add', null, {
-    params: { 
-      userId: userIdNum, 
-      productId: productIdNum,
-      count: countNum
-    }
+// ===================== 购物车接口 =====================
+// 1. 添加商品到购物车（适配后端：form-data参数 + 字符串返回）
+export const addToCart = async (userId, productId, count = 1) => {
+  // 参数校验
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法加入购物车')
+    throw new Error('userId不是有效数字')
+  }
+  if (isNaN(Number(productId))) {
+    ElMessage.error('商品ID异常，无法加入购物车')
+    throw new Error('productId不是有效数字')
+  }
+  if (isNaN(Number(count)) || Number(count) <= 0) {
+    ElMessage.error('商品数量必须大于0')
+    throw new Error('count不合法')
+  }
+
+  // 适配后端：使用form-data格式传递参数（你的CartController要求）
+  const formData = new FormData()
+  formData.append('userId', Number(userId))
+  formData.append('productId', Number(productId))
+  formData.append('count', Number(count))
+
+  // 发起请求（关键：后端返回纯字符串，这里直接返回）
+  return cartAxios.post('/cart/add', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
 
@@ -256,6 +398,36 @@ export const updateOrderStatus = async (orderId, status) => {
       status: Number(status)
     },
     headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 5. 按状态查询用户订单（适配前端tab切换）
+export const getOrderListByStatus = async (userId, status) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法获取订单列表')
+    throw new Error('userId不是有效数字')
+  }
+  if (isNaN(Number(status)) || status < 0 || status > 4) {
+    ElMessage.error('订单状态不合法（0=待付款 1=待发货 2=待收货 3=已完成 4=已取消）')
+    throw new Error('订单状态不合法')
+  }
+  return orderAxios.get('/order/listByStatus', {
+    params: { 
+      userId: Number(userId),
+      status: Number(status)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// ========== 新增：订单删除接口 ==========
+export const deleteOrder = async (orderId) => {
+  if (isNaN(Number(orderId))) {
+    ElMessage.error('订单ID异常')
+    throw new Error('orderId无效')
+  }
+  return orderAxios.post('/order/delete', null, {
+    params: { orderId: Number(orderId) }
   })
 }
 
