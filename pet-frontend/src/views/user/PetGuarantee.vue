@@ -89,48 +89,49 @@
         </div>
       </div>
 
-      <!-- 责任/意外保险区域 -->
+      <!-- 责任/意外保险区域（从数据库遍历 id ≥ 5 的保险） -->
       <div class="insurance-list rounded">
         <div class="top-more">
           <h3>更多推荐</h3>
         </div>
-        <!-- 宠物责任险 -->
-        <div class="insurance-item rounded">
-          <p class="insurance-subtitle">赔人的医药费</p>
-          <p class="insurance-desc">猫狗抓人、咬人，帮你赔医药费。主人/他人均可赔，感染猫藓、弓形虫等也能赔</p>
+        <!-- 遍历数据库中 id ≥ 5 的保险产品 -->
+        <div 
+          class="insurance-item rounded"
+          v-for="item in insuranceList" 
+          :key="item.id"
+        >
+          <!-- img_remark 括号外文字 -->
+          <p class="insurance-subtitle">
+            {{ getRemarkOutside(getContentType4Remark(item.mediaList)) }}
+          </p>
+          <!-- img_remark 括号内文字 -->
+          <p class="insurance-desc">
+            {{ getRemarkInside(getContentType4Remark(item.mediaList)) || '暂无描述' }}
+          </p>
           <div class="insurance-card">
-            <img src="https://picsum.photos/seed/pet-liability/200/200" alt="宠物责任险" class="insurance-img rounded" />
+            <!-- ========== 动态获取mediaList里的图片路径 ========== -->
+            <img 
+              :src="getInsuranceImgUrl(getDynamicImgPath(item.mediaList))" 
+              :alt="item.insuranceName" 
+              class="insurance-img rounded" 
+              @error="(e) => e.target.src = 'https://via.placeholder.com/120x120?text=暂无图片'"
+            />
             <div class="insurance-info">
-              <h3>宠物责任险</h3>
-              <p class="insurance-amount">最高24万</p>
-              <p class="insurance-scope">主人/他人受伤</p>
-              <p class="insurance-tag">蚂蚁保金选·全网不怕比</p>
+              <h3>{{ item.insuranceName }}</h3>
+              <p class="insurance-amount">最高{{ formatToWan(item.totalGuarantee) }}万</p>
+              <p class="insurance-scope">  {{ item.giftService && item.giftService.trim() ? '赠送' + item.giftService : '无赠送服务' }}</p>
+              <p class="insurance-tag" v-if="item.tag">{{ item.tag }}</p>
               <div class="insurance-price-btn">
-                <p class="insurance-price">4.98元/月起</p>
-                <p class="insurance-bonus">送狂犬疫苗</p>
-                <button class="insurance-btn">去看看</button>
+                <p class="insurance-price">{{ formatMonthlyPrice(item.discountPremium, item.guaranteeCycle) }}元/月起</p>
+                <p class="insurance-bonus" v-if="item.bonus">{{ item.bonus }}</p>
+                <button class="insurance-btn" @click="goToInsuranceDetail(item.id)">去看看</button>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- 宠物意外医疗险 -->
-        <div class="insurance-item">
-          <p class="insurance-subtitle">受伤/误食可保</p>
-          <p class="insurance-desc">摔伤、误食、打架等意外，治疗费用贵，这款保障投入小，报销高。特别适合调皮捣蛋、上蹿下跳的宝贝</p>
-          <div class="insurance-card">
-            <img src="https://picsum.photos/seed/pet-accident/200/200" alt="宠物意外医疗险" class="insurance-img " />
-            <div class="insurance-info">
-              <h3>宠物意外医疗险</h3>
-              <p class="insurance-amount">最高3万</p>
-              <p class="insurance-scope">意外伤害</p>
-              <div class="insurance-price-btn">
-                <p class="insurance-price">4.92元/月起</p>
-                <p class="insurance-bonus">不限宠物年龄</p>
-                <button class="insurance-btn">去看看</button>
-              </div>
-            </div>
-          </div>
+        <!-- 兜底：无数据时显示 -->
+        <div v-if="insuranceList.length === 0" class="no-data">
+          暂无更多推荐的保险产品
         </div>
       </div>
     </div>
@@ -138,21 +139,116 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { getInsurancePage, getInsuranceImgUrl, getInsuranceMediaList } from '@/api/user/index.js'
 
-// 用于跟踪当前激活的套餐索引，默认选中推荐套餐（索引1）
+const router = useRouter()
 const activePackage = ref(1)
+const insuranceList = ref([])
 
-// 点击套餐项时触发的事件处理函数
+const goToInsuranceDetail = (insuranceId) => {
+  // 跳转到保险详情页
+  router.push({
+    path: '/policy-detail-more', // 替换成你的详情页路由路径
+    query: { id: insuranceId } // 携带保险ID
+  })
+
+}
+
+// 点击套餐项
 const handlePackageClick = (index) => {
   activePackage.value = index
 }
+
+// 数字换算：元 → 万（如 240000 → 24万）
+const formatToWan = (num) => {
+  if (!num || isNaN(Number(num))) return '0'
+  const value = Number(num) / 10000
+  return value.toFixed(1).replace(/\.0$/, '')
+}
+
+// 月付价格换算：总保费 / 保障周期（月）
+const formatMonthlyPrice = (totalPremium, guaranteeCycle) => {
+  if (!totalPremium || !guaranteeCycle || isNaN(Number(totalPremium)) || isNaN(Number(guaranteeCycle)) || Number(guaranteeCycle) <= 0) {
+    return '0.00'
+  }
+  const monthly = Number(totalPremium) / Number(guaranteeCycle)
+  return monthly.toFixed(2)
+}
+
+// ============== 新增：动态获取图片路径（仅新增这一个函数） ==============
+const getDynamicImgPath = (mediaList) => {
+  if (!mediaList || !Array.isArray(mediaList) || mediaList.length === 0) return '';
+  // 优先取contentType=4的图片（推荐图），没有则取第一个有路径的图片
+  const type4Item = mediaList.find(item => item.contentType === 4 && item.imgPath);
+  if (type4Item) return type4Item.imgPath;
+  // 兜底：取第一个有路径的图片
+  const firstValidItem = mediaList.find(item => item.imgPath);
+  return firstValidItem ? firstValidItem.imgPath : '';
+};
+
+// ============== 核心：提取 content_type=4 的 img_remark ==============
+// 从 mediaList 中找到 content_type=4 的记录，并返回其 img_remark
+const getContentType4Remark = (mediaList) => {
+  if (!mediaList || !Array.isArray(mediaList)) return ''
+  // 筛选 content_type=4 的媒体记录
+  const type4Item = mediaList.find(item => item.contentType === 4)
+  return type4Item ? type4Item.imgRemark : ''
+}
+
+// 从 img_remark 提取括号外文字（如“004产品特色”）
+const getRemarkOutside = (remark) => {
+  if (!remark || !remark.includes('（')) return remark || ''
+  return remark.split('（')[0].trim()
+}
+
+// 从 img_remark 提取括号内文字（如“猫咪的专属医保”）
+const getRemarkInside = (remark) => {
+  if (!remark || !remark.includes('（') || !remark.includes('）')) return ''
+  const start = remark.indexOf('（') + 1
+  const end = remark.indexOf('）')
+  return remark.substring(start, end).trim()
+}
+
+// 页面加载时，获取 id ≥ 5 的上架保险（含 mediaList）
+onMounted(async () => {
+  try {
+    // 调用详情接口（含 mediaList），遍历 id ≥ 5
+    const res = await getInsurancePage(1, 10, '', undefined, 1)
+    if (res.code === 200) {
+      const allInsurances = res.data.records
+      // 过滤 id ≥ 5
+      const filtered = allInsurances.filter(item => item.id >= 5)
+      // 为每个保险补充 mediaList（调用媒体列表接口）
+      const listWithMedia = await Promise.all(
+        filtered.map(async (item) => {
+          try {
+            const mediaRes = await getInsuranceMediaList(item.id)
+            if (mediaRes.code === 200) {
+              return { ...item, mediaList: mediaRes.data }
+            }
+          } catch (err) {
+            console.error(`获取保险 ${item.id} 媒体列表失败：`, err)
+          }
+          return { ...item, mediaList: [] }
+        })
+      )
+      insuranceList.value = listWithMedia
+      console.log('保险列表（含 mediaList，id≥5）：', insuranceList.value)
+    } else {
+      console.error('获取保险列表失败：', res.msg)
+    }
+  } catch (err) {
+    console.error('请求保险列表异常：', err)
+  }
+})
 </script>
 
 <style scoped>
-/* 外层居中容器 */
+/* 原有样式全部保留，只添加兜底样式 */
 .page-container {
-  max-width: 1200px; /* 可根据需求调整最大宽度 */
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 15px;
 }
@@ -161,12 +257,10 @@ const handlePackageClick = (index) => {
   background-color: #f2f2f0;
   width: 100%;
 }
-/* 圆角样式通用类 */
 .rounded {
   border-radius: 12px;
   overflow: hidden;
 }
-/* Banner 样式 */
 .banner {
   position: relative;
   width: 100%;
@@ -202,7 +296,6 @@ const handlePackageClick = (index) => {
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* 保障亮点区域样式 */
 .highlight-area {
   background-color: #7667ea;
   color: #fff;
@@ -212,72 +305,60 @@ const handlePackageClick = (index) => {
 .highlight-title {
   font-size: 20px;
   font-weight: bold;
-  margin: 0 0 10px;
+  margin: 0  10px;
 }
-
 .highlight-list {
   display: flex;
-  justify-content: space-between; /* 子元素水平均分 */
+  justify-content: space-between;
 }
-
 .highlight-item {
   display: flex;
   align-items: center;
 }
-
 .check-icon {
   width: 20px;
   height: 20px;
   margin-right: 5px;
 }
-
 .highlight-item span {
   font-size: 14px;
 }
 
-/* 套餐选择区域样式 */
 .package-area {
   display: flex;
   justify-content: space-around;
   padding: 0 15px 15px;
-  gap: 10px; /* 增加间距，防止放大时重叠 */
+  gap: 10px;
 }
 .package-item {
-  flex: 1; /* 使用flex:1使三个项目宽度相等 */
-  min-width: 0; /* 防止内容过长时破坏flex布局 */
+  flex: 1;
+  min-width: 0;
   background-color: #fff;
   border-radius: 10px;
   padding: 15px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   text-align: center;
-  transition: all 0.3s ease-in-out; /* 平滑过渡效果 */
-  border: 2px solid transparent; /* 预定义透明边框，防止布局跳动 */
+  transition: all 0.3s ease-in-out;
+  border: 2px solid transparent;
 }
-
-/* 推荐套餐的基础样式（默认选中） */
 .package-item.recommended {
   background-color: #fff9e6;
 }
-
-/* 点击后的激活样式 */
 .package-item.active {
-  border-color: #4186e8; /* 显示蓝色边框 */
-  transform: scale(1.05); /* 放大1.05倍 */
-  box-shadow: 0 4px 12px rgba(65, 134, 232, 0.3); /* 增强阴影 */
-  z-index: 10; /* 确保在最上层 */
+  border-color: #4186e8;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(65, 134, 232, 0.3);
+  z-index: 10;
 }
-
 .package-item.active .medical-fee {
-  color: #ff9900; /* 点击后医疗费文字变橙色 */
+  color: #ff9900;
 }
-
 .package-item.active .start-claim,
 .package-item.active .reimbursement,
 .package-item.active .subsidy,
 .package-item.active .service {
-  color: #000; /* 点击后商品介绍字体变黑 */
+  color: #000;
 }
-
 .package-tag {
   background-color: #ffcc00;
   color: #333;
@@ -293,7 +374,7 @@ const handlePackageClick = (index) => {
   font-weight: bold;
   color: #333;
   margin: 10px 0;
-  transition: color 0.3s ease; /* 颜色过渡效果 */
+  transition: color 0.3s ease;
 }
 .start-claim, .reimbursement {
   font-size: 16px;
@@ -314,7 +395,7 @@ const handlePackageClick = (index) => {
   font-weight: bold;
   color: #ff9900;
 }
-/* 行动按钮样式 */
+
 .action-btn {
   display: flex;
   justify-content: center;
@@ -324,7 +405,7 @@ const handlePackageClick = (index) => {
 }
 .main-btn {
   text-align: center;
-  text-decoration: none; /* 清除路由链接下划线 */
+  text-decoration: none;
   background-color: #4186e8;
   color: #fff;
   border: none;
@@ -349,7 +430,7 @@ const handlePackageClick = (index) => {
   right: 20px;
 }
 
-/* 保险列表区域样式 */
+/* 保险列表区域（原有样式不变） */
 .top-more{
   padding: 0 10px;
 }
@@ -365,7 +446,7 @@ const handlePackageClick = (index) => {
   font-size: 18px;
   font-weight: bold;
   color: #4186e8;
-  margin-bottom: 8px;
+  margin: 8px 0;
   padding-left: 10px;
 }
 .insurance-desc {
@@ -401,6 +482,20 @@ const handlePackageClick = (index) => {
   font-size: 14px;
   color: #999;
   margin: 5px 0;
+}
+.insurance-scope{
+  /* 关键：让元素宽度贴合文字（默认是block占满整行） */
+  display: inline-block;
+  /* 可选：加少量内边距，让文字和边框有间距，更美观 */
+  padding: 2px 8px;
+  /* 圆角调整：用px或%都可以，25%改成50px（椭圆圆角）/ 8px（小圆角）更自然 */
+  border-radius: 20px; /* 推荐值，比25%更圆润，适配不同文字长度 */
+  /* 保留你的原有样式 */
+  background-color: #fff9e6;
+  color: #ffa44b;
+  font-size: 14px;
+  margin: 5px 0;
+  width: auto;
 }
 .insurance-tag {
   background-color: #fff9e6;
@@ -441,4 +536,11 @@ const handlePackageClick = (index) => {
   cursor: pointer;
 }
 
+/* 兜底：无数据样式 */
+.no-data {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 14px;
+}
 </style>

@@ -299,20 +299,38 @@ const switchTab = (tabKey) => {
   fetchOrderData(tabKey)
 }
 
-// 处理图片路径（适配本地/服务器路径，兜底改为本地SVG图）
+// ========== 核心修复：图片路径拼接方法 ==========
 const getImgUrl = (imgPath) => {
-  // 空路径直接返回本地默认图
+  // 1. 空路径直接返回本地默认图
   if (!imgPath || imgPath.trim() === '') {
     return new URL('@/assets/images/我的图标/查询.svg', import.meta.url).href;
   }
+
+  // 2. 已包含完整域名（如http://xxx），直接返回
+  if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+    return imgPath;
+  }
+
+  // 3. 处理相对路径（核心修复：正确拼接服务器地址）
+  // 服务器基础地址（和后端配置的server.domain保持一致）
+  const baseUrl = 'http://localhost:8080';
   
-  // 适配Windows路径（替换反斜杠+截取productimg后的路径）
-  const relativePath = imgPath.split('productimg\\')[1]?.replace(/\\/g, '/');
+  // 路径以/开头，直接拼接；否则补全/product-img/前缀
+  const fullPath = imgPath.startsWith('/') 
+    ? imgPath 
+    : `/product-img/${imgPath}`;
   
-  // 有有效路径则拼接服务器地址，否则返回本地默认图
-  return relativePath 
-    ? `http://localhost:8080/product-images/${relativePath}` 
-    : new URL('@/assets/images/我的图标/查询.svg', import.meta.url).href;
+  // 最终完整URL
+  const finalUrl = `${baseUrl}${fullPath}`;
+  
+  // 调试日志：打印拼接前后的路径，方便排查
+  console.log('图片路径拼接：', {
+    original: imgPath,
+    fullPath: fullPath,
+    finalUrl: finalUrl
+  });
+  
+  return finalUrl;
 };
 
 // 防无限报错：图片错误处理
@@ -321,7 +339,7 @@ const handleImgError = (e, item) => {
   item.imgErrorHandled = true;
   // 改为本地默认SVG图
   e.target.src = new URL('@/assets/images/我的图标/查询.svg', import.meta.url).href;
-  console.warn(`商品【${item.productTitle || '未知商品'}】图片加载失败，已替换为默认图`);
+  console.warn(`商品【${item.productTitle || '未知商品'}】图片加载失败，已替换为默认图，原URL：${e.target.src}`);
 };
 
 /** 请求数据（仅修改待发货订单逻辑，其他不变） */

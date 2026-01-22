@@ -42,6 +42,11 @@ const routes = [
     name: 'UserOrder',
     component: () => import('../views/user/my/MyOrder.vue')
   },
+      {
+    path: '/policy-detail-more',
+    name: 'policy-more',
+    component: () => import('../views/user/PolicyDetailmore.vue')
+  },
 ]
 
 const router = createRouter({

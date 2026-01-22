@@ -9,11 +9,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +40,10 @@ public class PetController {
     // 从配置文件读取宠物照片上传根路径（application.yml 中配置 upload.pet-photo-path）
     @Value("${upload.pet-photo-path}")
     private String petPhotoPath;
+
+    // 注入宠物照片访问前缀（application.yml中配置的upload.pet-photo-access-path）
+    @Value("${upload.pet-photo-access-path:/pet-img}")
+    private String petPhotoAccessPath;
 
     /**
      * 1. 新增宠物接口
@@ -62,7 +71,7 @@ public class PetController {
     }
 
     /**
-     * 2. 宠物照片上传（支持正脸照/全身照）
+     * 2. 宠物照片上传（支持正脸照/全身照）- 修复classpath路径写入问题
      * @param file      上传的图片文件
      * @param userId    用户ID
      * @param petId     宠物ID
@@ -103,39 +112,69 @@ public class PetController {
             return Result.fail("上传失败：仅支持jpg、jpeg、png、gif格式图片");
         }
 
-        // 3. 确保上传目录存在
-        File dir = new File(petPhotoPath);
-        if (!dir.exists()) {
-            boolean mkdirSuccess = dir.mkdirs();
-            if (!mkdirSuccess) {
-                log.error("创建上传目录失败，路径：{}", petPhotoPath);
-                return Result.fail("上传失败：创建存储目录失败");
+        // 3. 解析上传目录（核心修复：处理classpath路径）
+        File uploadDir;
+        try {
+            if (petPhotoPath.startsWith("classpath:")) {
+                // 处理classpath路径，转换为实际可写入的物理路径
+                String classpathRelativePath = petPhotoPath.replace("classpath:", "");
+                ClassPathResource resource = new ClassPathResource(classpathRelativePath);
+
+                // 解决Windows路径编码问题（如%20）
+                String realPath = resource.getURL().getPath();
+                realPath = URLDecoder.decode(realPath, "UTF-8");
+                uploadDir = new File(realPath);
+            } else {
+                // 非classpath路径直接使用
+                uploadDir = new File(petPhotoPath);
             }
+
+            // 确保目录存在（多级目录）
+            if (!uploadDir.exists()) {
+                boolean mkdirSuccess = uploadDir.mkdirs();
+                if (!mkdirSuccess) {
+                    log.error("创建上传目录失败，路径：{}", uploadDir.getAbsolutePath());
+                    return Result.fail("上传失败：创建存储目录失败");
+                }
+                log.info("成功创建宠物照片上传目录：{}", uploadDir.getAbsolutePath());
+            }
+
+            // 校验目录可写
+            if (!uploadDir.canWrite()) {
+                log.error("宠物照片上传目录无写入权限：{}", uploadDir.getAbsolutePath());
+                return Result.fail("上传失败：存储目录无写入权限");
+            }
+        } catch (Exception e) {
+            log.error("解析宠物照片上传目录失败", e);
+            return Result.fail("上传失败：目录解析错误，原因：" + e.getMessage());
         }
 
         // 4. 生成唯一文件名（避免重复）
         String uuid = UUID.randomUUID().toString().replace("-", "");
         String newFileName = String.format("%d_%d_%s_%s%s", userId, petId, photoType, uuid, fileExt);
-        File dest = new File(petPhotoPath + File.separator + newFileName); // 兼容Windows/Linux路径分隔符
+        File destFile = new File(uploadDir, newFileName);
 
-        // 5. 写入文件
+        // 5. 写入文件（核心修复：用Files.copy替代transferTo，兼容classpath路径）
         try {
-            file.transferTo(dest);
+            // 写入文件（覆盖已存在的同名文件）
+            Files.copy(file.getInputStream(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
             // 校验文件是否真的写入成功
-            if (!dest.exists() || dest.length() == 0) {
-                log.error("文件写入失败：目标文件为空，路径：{}", dest.getAbsolutePath());
+            if (!destFile.exists() || destFile.length() == 0) {
+                log.error("文件写入失败：目标文件为空，路径：{}", destFile.getAbsolutePath());
                 return Result.fail("上传失败：文件写入异常");
             }
 
-            // 6. 生成访问URL（需配置静态资源映射）
-            String imgUrl = "/pet-images/" + newFileName;
-            log.info("图片上传成功，存储路径：{}，访问URL：{}", dest.getAbsolutePath(), imgUrl);
+            // 6. 生成访问URL（使用配置的访问前缀）
+            String imgUrl = petPhotoAccessPath + "/" + newFileName;
+            log.info("图片上传成功，存储路径：{}，访问URL：{}", destFile.getAbsolutePath(), imgUrl);
             return Result.success(imgUrl, "图片上传成功");
         } catch (IOException e) {
             log.error("图片上传失败，用户ID：{}，宠物ID：{}", userId, petId, e);
             return Result.fail("上传失败：" + e.getMessage());
         }
     }
+
     /**
      * 【新增】兼容前端的 /pet/list 接口（query传参）
      * 前端调用 /pet/list?userId=1 时，转发到原有逻辑
@@ -145,6 +184,7 @@ public class PetController {
         // 直接复用原有路径参数的逻辑
         return getPetListByUserId(userId);
     }
+
     /**
      * 3. 【核心】根据用户ID查询所有宠物（登录用户专属）
      * 支持两种调用方式：

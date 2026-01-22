@@ -9,6 +9,9 @@ import org.example.petbackend.service.PetOrderMainService;
 import org.example.petbackend.service.PetOrderItemService;
 import org.example.petbackend.service.ProductService;
 import org.example.petbackend.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
@@ -18,6 +21,8 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/order")
 public class PetOrderController {
+    // 新增日志组件，方便排查问题
+    private static final Logger log = LoggerFactory.getLogger(PetOrderController.class);
 
     @Resource
     private PetOrderMainService orderMainService;
@@ -27,6 +32,14 @@ public class PetOrderController {
     private UserService userService;
     @Resource
     private ProductService productService;
+
+    // 注入服务器域名（和头像/宠物图片保持一致，从yml配置读取）
+    @Value("${server.domain:http://localhost:8080}")
+    private String serverDomain;
+
+    // 注入商品图片访问前缀（对应yml中的upload.product-img-access-path）
+    @Value("${upload.product-img-access-path:/product-img}")
+    private String productImgAccessPath;
 
     // 1. 创建订单（无需修改）
     @PostMapping("/create")
@@ -76,10 +89,11 @@ public class PetOrderController {
         return Result.success(orderId, "订单创建成功，订单ID：" + orderId);
     }
 
-    // 2. 查询用户的订单列表（核心修复：添加productDescription + 调试日志）
+    // 2. 查询用户的订单列表（核心修复：图片路径拼接完整URL）
     @GetMapping("/list")
     public Result<?> getOrderList(@RequestParam Integer userId) {
         if (userService.getById(userId) == null) {
+            log.warn("查询订单列表失败：用户不存在，userId={}", userId);
             return Result.fail("用户不存在");
         }
 
@@ -116,21 +130,23 @@ public class PetOrderController {
                 // 关联查询商品信息
                 Product product = productService.getProductById(item.getProductId());
                 if (product != null) {
-                    // 新增：调试日志（关键）
-                    System.out.println("【列表接口】商品ID：" + item.getProductId() +
-                            "，标题：" + product.getTitle() +
-                            "，介绍：" + product.getDescription());
+                    // 调试日志
+                    log.info("【订单列表】商品ID：{}，标题：{}，原始图片路径：{}",
+                            item.getProductId(), product.getTitle(), product.getImgPath());
 
                     itemMap.put("productTitle", product.getTitle());
-                    itemMap.put("productImgPath", product.getImgPath());
+                    // 核心修复：拼接完整的图片访问URL
+                    String fullImgUrl = buildFullImgUrl(product.getImgPath());
+                    itemMap.put("productImgPath", fullImgUrl);
                     itemMap.put("productNowPrice", product.getNowPrice());
                     itemMap.put("productOldPrice", product.getOldPrice());
-                    // 核心修复：添加商品介绍字段 + 空值兜底
+                    // 空值兜底
                     itemMap.put("productDescription", Optional.ofNullable(product.getDescription()).orElse("暂无介绍"));
                 } else {
                     // 商品不存在时的兜底
+                    log.warn("【订单列表】商品ID：{} 不存在", item.getProductId());
                     itemMap.put("productTitle", "商品已下架");
-                    itemMap.put("productImgPath", "");
+                    itemMap.put("productImgPath", ""); // 空路径避免前端报错
                     itemMap.put("productNowPrice", "0.00");
                     itemMap.put("productOldPrice", "0.00");
                     itemMap.put("productDescription", "商品已下架，暂无介绍");
@@ -145,11 +161,12 @@ public class PetOrderController {
         return Result.success(resultList, "订单列表查询成功");
     }
 
-    // 3. 查询订单详情（优化：添加空值兜底）
+    // 3. 查询订单详情（核心修复：图片路径拼接完整URL）
     @GetMapping("/detail")
     public Result<?> getOrderDetail(@RequestParam Long orderId) {
         PetOrderMain orderMain = orderMainService.getById(orderId);
         if (orderMain == null) {
+            log.warn("查询订单详情失败：订单不存在，orderId={}", orderId);
             return Result.fail("订单不存在");
         }
 
@@ -168,17 +185,19 @@ public class PetOrderController {
 
             Product product = productService.getProductById(item.getProductId());
             if (product != null) {
-                System.out.println("【详情接口】商品ID：" + item.getProductId() +
-                        "，标题：" + product.getTitle() +
-                        "，介绍：" + product.getDescription());
+                log.info("【订单详情】商品ID：{}，标题：{}，原始图片路径：{}",
+                        item.getProductId(), product.getTitle(), product.getImgPath());
 
                 itemMap.put("productTitle", product.getTitle());
-                itemMap.put("productImgPath", product.getImgPath());
+                // 核心修复：拼接完整的图片访问URL
+                String fullImgUrl = buildFullImgUrl(product.getImgPath());
+                itemMap.put("productImgPath", fullImgUrl);
                 itemMap.put("productNowPrice", product.getNowPrice());
                 itemMap.put("productOldPrice", product.getOldPrice());
-                // 优化：空值兜底
+                // 空值兜底
                 itemMap.put("productDescription", Optional.ofNullable(product.getDescription()).orElse("暂无介绍"));
             } else {
+                log.warn("【订单详情】商品ID：{} 不存在", item.getProductId());
                 itemMap.put("productTitle", "商品已下架");
                 itemMap.put("productImgPath", "");
                 itemMap.put("productNowPrice", "0.00");
@@ -232,7 +251,7 @@ public class PetOrderController {
     // 5. 新增：删除订单（修复后）
     @PostMapping("/delete")
     public Result<?> deleteOrder(@RequestParam Long orderId) {
-        // 1. 删除订单明细表（使用MyBatis-Plus的Wrappers构造条件）
+        // 1. 删除订单明细表
         boolean deleteItems = orderItemService.remove(
                 Wrappers.<PetOrderItem>lambdaQuery().eq(PetOrderItem::getOrderId, orderId)
         );
@@ -241,9 +260,35 @@ public class PetOrderController {
         boolean deleteMain = orderMainService.removeById(orderId);
 
         if (deleteItems && deleteMain) {
+            log.info("订单删除成功，orderId={}", orderId);
             return Result.success(null, "订单删除成功");
         } else {
+            log.error("订单删除失败，orderId={}", orderId);
             return Result.fail("订单删除失败");
         }
+    }
+
+    /**
+     * 工具方法：拼接完整的商品图片访问URL
+     * 处理各种路径情况：空路径、已拼接域名、仅文件名、带前缀路径
+     */
+    private String buildFullImgUrl(String rawImgPath) {
+        // 空路径直接返回空
+        if (rawImgPath == null || rawImgPath.trim().isEmpty()) {
+            return "";
+        }
+
+        // 已包含完整域名（如http://xxx），直接返回
+        if (rawImgPath.startsWith("http://") || rawImgPath.startsWith("https://")) {
+            return rawImgPath;
+        }
+
+        // 仅文件名（如xxx.png），拼接域名+商品图片前缀
+        if (!rawImgPath.startsWith("/")) {
+            return serverDomain + productImgAccessPath + "/" + rawImgPath;
+        }
+
+        // 带前缀路径（如/product-img/xxx.png），拼接域名
+        return serverDomain + rawImgPath;
     }
 }

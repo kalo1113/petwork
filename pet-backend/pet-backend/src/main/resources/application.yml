@@ -1,12 +1,11 @@
 spring:
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL 8.x驱动
+    driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/petwork?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: lxt1113
 
-  # Redis 配置（修正层级：spring.redis 而非 spring.data.redis）
-  redis:  # 关键修正：从spring.data.redis改为spring.redis
+  redis:
     host: localhost
     port: 6379
     timeout: 30000
@@ -17,57 +16,67 @@ spring:
         min-idle: 2
         max-wait: 10000
 
-  # 文件上传大小限制
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 20MB
 
-  # 全局日期格式化（配合WebMvcConfig）
   mvc:
     format:
-      date: yyyy-MM-dd  # 统一日期格式
+      date: yyyy-MM-dd
 
-# ========== 上传路径配置（整合用户头像 + 宠物图片） ==========
+  # 静态资源映射：保留默认classpath:/static/即可
+  web:
+    resources:
+      static-locations: classpath:/static/
+      cache:
+        period: 3600
+
+# ========== 上传路径配置（匹配数据库路径） ==========
 upload:
-  # 用户头像路径（原有）
-  user-avatar-path: F:/毕设/新建文件夹/pet-backend/user-img/
-  avatar-access-path: /avatar/
-  # 宠物图片路径（新增）
-  pet-photo-path: F:/毕设/新建文件夹/pet-backend/pet-photo/
-  pet-photo-access-path: /pet-images/
+  # 用户头像（保持原有）
+  user-avatar-path: classpath:/static/images/user-img/
+  avatar-access-path: /user-img/
 
-# MyBatis-Plus 完整配置
+  # 宠物图片（保持原有）
+  pet-photo-path: classpath:/static/images/pet-img/
+  pet-photo-access-path: /pet-img/
+
+  # 产品图片（保持原有）
+  product-img-path: classpath:/static/images/product-img/
+  product-img-access-path: /product-img/
+
+  # 保险图片：access-path改为数据库里的/insurance-img/
+  insurance-img-path: classpath:/static/images/insurance-img/
+  insurance-img-access-path: /insurance-img/  # 与数据库路径一致
+
+
+# MyBatis-Plus 配置（保持不变）
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   type-aliases-package: org.example.petbackend.entity
   configuration:
-    map-underscore-to-camel-case: true  # 下划线转驼峰（必须）
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 打印SQL（开发用）
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
-      id-type: auto  # 主键自增策略
+      id-type: auto
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# 服务器配置
+# 服务器配置（保持不变）
 server:
   port: 8080
   servlet:
     encoding:
-      force-response: true  # 强制UTF-8编码（解决中文乱码）
-  # 静态资源缓存（可选，提升图片访问速度）
-  web:
-    resources:
-      cache:
-        period: 3600  # 缓存1小时
+      force-response: true
 
-# 日志配置（调试用）
+# 日志配置（保持不变）
 logging:
   level:
     org.example.petbackend: debug
     org.springframework.web.multipart: debug
-    com.baomidou.mybatisplus: debug  # MyBatis-Plus日志（可选）
+    com.baomidou.mybatisplus: debug
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"  # 日志格式
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"

@@ -47,6 +47,8 @@ const cartAxios = createAxiosInstance(BASE_URL)
 const orderAxios = createAxiosInstance(BASE_URL)
 // 收货地址模块实例（新增）
 const addressAxios = createAxiosInstance(BASE_URL)
+// 宠物保险模块实例（新增）
+const insuranceAxios = createAxiosInstance(BASE_URL)
 
 // ===================== 用户接口 =====================
 // 登录
@@ -511,3 +513,180 @@ export const deleteReceiverAddress = async (addressId, userId) => {
     headers: { 'Content-Type': 'application/json' }
   })
 }
+
+// ===================== 宠物保险接口（新增） =====================
+// 1. 新增保险产品
+export const addInsurance = async (insuranceData) => {
+  // 参数校验
+  if (!insuranceData.insuranceName || insuranceData.insuranceName.trim().length === 0) {
+    ElMessage.error('保险名称不能为空')
+    throw new Error('保险名称为空')
+  }
+  if (!insuranceData.discountPremium) {
+    ElMessage.error('优惠保费不能为空')
+    throw new Error('优惠保费为空')
+  }
+  // 发起请求
+  return insuranceAxios.post('/insurance/add', insuranceData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 2. 修改保险产品
+export const updateInsurance = async (insuranceData) => {
+  // 参数校验
+  if (isNaN(Number(insuranceData.id))) {
+    ElMessage.error('保险ID异常，无法修改')
+    throw new Error('insuranceId不是有效数字')
+  }
+  // 发起请求
+  return insuranceAxios.post('/insurance/update', insuranceData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 3. 删除保险产品（级联删除关联图片）
+export const deleteInsurance = async (insuranceId) => {
+  if (isNaN(Number(insuranceId))) {
+    ElMessage.error('保险ID异常，无法删除')
+    throw new Error('insuranceId不是有效数字')
+  }
+  return insuranceAxios.post(`/insurance/delete/${insuranceId}`, {}, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 4. 分页查询保险产品列表
+export const getInsurancePage = async (pageNum = 1, pageSize = 10, insuranceName, petType, status) => {
+  // 参数校验
+  if (isNaN(Number(pageNum)) || pageNum < 1) {
+    ElMessage.error('页码必须大于0')
+    throw new Error('pageNum不合法')
+  }
+  if (isNaN(Number(pageSize)) || pageSize < 1 || pageSize > 100) {
+    ElMessage.error('每页条数必须在1-100之间')
+    throw new Error('pageSize不合法')
+  }
+  // 构建查询参数
+  const params = {
+    pageNum: Number(pageNum),
+    pageSize: Number(pageSize)
+  }
+  if (insuranceName && insuranceName.trim().length > 0) {
+    params.insuranceName = insuranceName.trim()
+  }
+  if (petType !== undefined && !isNaN(Number(petType))) {
+    params.petType = Number(petType)
+  }
+  if (status !== undefined && !isNaN(Number(status))) {
+    params.status = Number(status)
+  }
+  // 发起请求
+  return insuranceAxios.get('/insurance/page', {
+    params: params,
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 5. 查询保险产品详情（含关联媒体图片）
+export const getInsuranceDetail = async (insuranceId) => {
+  if (isNaN(Number(insuranceId))) {
+    ElMessage.error('保险ID异常，无法查询详情')
+    throw new Error('insuranceId不是有效数字')
+  }
+  return insuranceAxios.get(`/insurance/detail/${insuranceId}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 6. 更新保险产品状态（上架/下架）
+export const updateInsuranceStatus = async (insuranceId, status) => {
+  if (isNaN(Number(insuranceId))) {
+    ElMessage.error('保险ID异常，无法更新状态')
+    throw new Error('insuranceId不是有效数字')
+  }
+  if (![0, 1].includes(Number(status))) {
+    ElMessage.error('状态值只能是0（下架）或1（上架）')
+    throw new Error('status不合法')
+  }
+  return insuranceAxios.post('/insurance/updateStatus', null, {
+    params: {
+      id: Number(insuranceId),
+      status: Number(status)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// ========== 保险媒体图片接口 ==========
+// 1. 新增保险媒体图片
+export const addInsuranceMedia = async (mediaData) => {
+  // 参数校验
+  if (isNaN(Number(mediaData.insuranceId))) {
+    ElMessage.error('关联保险ID异常')
+    throw new Error('insuranceId不是有效数字')
+  }
+  if (isNaN(Number(mediaData.contentType))) {
+    ElMessage.error('内容类型异常')
+    throw new Error('contentType不是有效数字')
+  }
+  if (!mediaData.imgPath && !mediaData.imgRemark) {
+    ElMessage.error('图片路径和说明不能同时为空')
+    throw new Error('媒体内容不完整')
+  }
+  // 发起请求
+  return insuranceAxios.post('/insurance/media/add', mediaData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 2. 修改保险媒体图片
+export const updateInsuranceMedia = async (mediaData) => {
+  if (isNaN(Number(mediaData.id))) {
+    ElMessage.error('媒体图片ID异常，无法修改')
+    throw new Error('mediaId不是有效数字')
+  }
+  return insuranceAxios.post('/insurance/media/update', mediaData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 3. 删除保险媒体图片
+export const deleteInsuranceMedia = async (mediaId) => {
+  if (isNaN(Number(mediaId))) {
+    ElMessage.error('媒体图片ID异常，无法删除')
+    throw new Error('mediaId不是有效数字')
+  }
+  return insuranceAxios.post(`/insurance/media/delete/${mediaId}`, {}, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 4. 根据保险ID查询关联的媒体图片
+export const getInsuranceMediaList = async (insuranceId) => {
+  if (isNaN(Number(insuranceId))) {
+    ElMessage.error('保险ID异常，无法查询媒体图片')
+    throw new Error('insuranceId不是有效数字')
+  }
+  return insuranceAxios.get(`/insurance/media/list/${insuranceId}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 5. 获取保险图片完整URL（适配静态资源映射）- 修复后版本
+export const getInsuranceImgUrl = (imgPath) => {
+  // 空路径返回空字符串（或通用占位符），避免引用不存在的图片
+  if (!imgPath || imgPath.trim() === '') {
+    // 方案1：返回空字符串（推荐，前端使用时可加默认图）
+    return '';
+    
+    // 方案2：返回公共占位符URL（无需本地文件）
+    // return 'https://via.placeholder.com/200x150?text=保险默认图';
+  }
+  // 已包含完整域名直接返回
+  if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+    return imgPath;
+  }
+  // 拼接基础URL（适配后端静态资源映射）
+  return `${BASE_URL}${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
+};

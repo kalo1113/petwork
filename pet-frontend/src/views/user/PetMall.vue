@@ -584,12 +584,23 @@ const toggleCart = async () => {
   }
 }
 
-// 处理图片路径
+// 处理商品图片路径（适配新路径 /product-img/xxx/xxx.jpg，移除过时拆分逻辑）
 const getImgUrl = (imgPath) => {
-  if (!imgPath) return '/assets/images/default-product.png'
-  const relativePath = imgPath.split('productimg\\')[1]?.replace(/\\/g, '/')
-  return relativePath ? `http://localhost:8080/product-images/${relativePath}` : '/assets/images/default-product.png'
-}
+  // 第一步：判断图片路径是否有效
+  if (!imgPath || typeof imgPath !== 'string' || imgPath.trim() === '') {
+    return '/assets/images/default-product.png';
+  }
+
+  // 第二步：格式化路径（统一分隔符，去除开头多余/）
+  const formattedPath = imgPath
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+
+  // 第三步：直接拼接后端根地址 + 格式化后的路径（无冗余目录）
+  return formattedPath
+    ? `http://localhost:8080/${formattedPath}` // 关键修改：移除 product-images/
+    : '/assets/images/default-product.png';
+};
 
 // 计算医保节省金额
 const calculateSave = (product) => {

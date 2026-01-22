@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.*;
@@ -17,8 +19,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/user")
@@ -120,7 +126,7 @@ public class UserController {
         return Result.fail("用户不存在");
     }
 
-    // ========== 头像上传接口（适配User实体） ==========
+    // ========== 头像上传接口（修复文件写入问题） ==========
     @PostMapping("/uploadAvatar")
     public Result<String> uploadAvatar(
             @RequestParam("userId") Integer userId,
@@ -142,36 +148,83 @@ public class UserController {
             // 3. 处理文件名
             String originalFilename = file.getOriginalFilename();
             if (originalFilename == null || !originalFilename.contains(".")) {
-                return Result.failParam("文件格式错误，仅支持jpg/png等格式");
+                return Result.failParam("文件格式错误，仅支持jpg/png/gif格式");
             }
-            String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+            String suffix = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase();
             if (!suffix.matches("\\.(jpg|jpeg|png|gif)$")) {
                 return Result.failParam("仅支持jpg/jpeg/png/gif格式的图片");
             }
 
-            // 4. 生成安全文件名
-            String safeUsername = user.getUsername().replaceAll("[\\\\/:*?\"<>|]", "_");
-            String fileName = userId + "_" + safeUsername + "_" + System.currentTimeMillis() + suffix;
+            // 4. 生成安全文件名（UUID替代时间戳，避免并发重复）
+            String safeUsername = user.getUsername() == null
+                    ? "unknown"
+                    : user.getUsername().replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5]", "_");
+            String fileName = userId + "_" + safeUsername + "_" + UUID.randomUUID().toString().replace("-", "") + suffix;
 
-            // 5. 创建目录并保存文件
-            File dir = new File(userAvatarPath);
-            if (!dir.exists()) {
-                dir.mkdirs();
-                log.info("创建头像目录：{}", userAvatarPath);
+            // 5. 解析上传目录（核心修复：兼容classpath路径，解决ResourceUtils坑）
+            File dir;
+            try {
+                if (userAvatarPath.startsWith("classpath:")) {
+                    String classpathRelativePath = userAvatarPath.replace("classpath:", "");
+                    ClassPathResource resource = new ClassPathResource(classpathRelativePath);
+
+                    // 处理路径编码问题（Windows下%20等）
+                    String realPath = resource.getURL().getPath();
+                    realPath = java.net.URLDecoder.decode(realPath, "UTF-8");
+                    dir = new File(realPath);
+                } else {
+                    dir = new File(userAvatarPath);
+                }
+
+                // 确保目录存在（多级目录）
+                if (!dir.exists()) {
+                    boolean mkdirSuccess = dir.mkdirs();
+                    if (mkdirSuccess) {
+                        log.info("头像上传目录创建成功：{}", dir.getAbsolutePath());
+                    } else {
+                        log.error("头像上传目录创建失败：{}", dir.getAbsolutePath());
+                        return Result.fail("头像上传失败：无法创建存储目录");
+                    }
+                }
+
+                // 校验目录可写
+                if (!dir.canWrite()) {
+                    log.error("头像上传目录无写入权限：{}", dir.getAbsolutePath());
+                    return Result.fail("头像上传失败：存储目录无写入权限");
+                }
+            } catch (Exception e) {
+                log.error("解析上传目录失败", e);
+                return Result.fail("头像上传失败：目录解析错误");
             }
+
+            // 6. 保存文件（核心修复：用Files.copy替代transferTo，更稳定）
             File destFile = new File(dir, fileName);
-            file.transferTo(destFile);
+            try {
+                Files.copy(file.getInputStream(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                log.info("头像文件保存成功：{}", destFile.getCanonicalPath());
+            } catch (IOException e) {
+                log.error("头像文件保存失败", e);
+                return Result.fail("头像上传失败：文件写入失败，原因：" + e.getMessage());
+            }
 
-            // 6. 更新用户头像字段（适配User实体的avatarUrl）
+            // 7. 更新数据库（仅存储纯文件名）
             user.setAvatarUrl(fileName);
-            userService.updateById(user);
+            boolean updateSuccess = userService.updateById(user);
+            if (!updateSuccess) {
+                log.error("用户头像字段更新失败，userId={}", userId);
+                // 回滚：删除已写入的文件
+                if (destFile.exists()) {
+                    boolean deleteSuccess = destFile.delete();
+                    log.info("回滚删除文件：{}，结果：{}", destFile.getAbsolutePath(), deleteSuccess);
+                }
+                return Result.fail("头像上传失败：用户信息更新失败");
+            }
 
-            // 7. 返回完整URL
-            String fullAvatarUrl = serverDomain + avatarAccessPath + fileName;
-            return Result.success(fullAvatarUrl, "头像上传成功");
+            // 8. 返回纯文件名
+            return Result.success(fileName, "头像上传成功");
 
-        } catch (IOException e) {
-            log.error("头像上传失败", e);
+        } catch (Exception e) {
+            log.error("头像上传异常", e);
             return Result.fail("头像上传失败：" + e.getMessage());
         }
     }
@@ -376,14 +429,15 @@ public class UserController {
             return Result.fail("待入账金额转入失败，请稍后重试");
         }
     }
+
     // ========== 新增：钱包扣款接口（结算时扣减余额） ==========
     @PostMapping("/deductBalance")
     public Result<User> deductWalletBalance(@RequestBody Map<String, Object> paramMap) {
-// 解析参数
+        // 解析参数
         Integer userId = (Integer) paramMap.get("userId");
         Object amountObj = paramMap.get("amount");
 
-// 参数校验
+        // 参数校验
         if (userId == null) {
             return Result.failParam("用户ID不能为空");
         }
@@ -421,6 +475,7 @@ public class UserController {
             return Result.fail("扣款失败，请稍后重试");
         }
     }
+
     // ========== 补充：获取用户ByEmail方法（适配UserService） ==========
     public User getUserByEmail(String email) {
         return userService.getOne(new QueryWrapper<User>().eq("email", email));

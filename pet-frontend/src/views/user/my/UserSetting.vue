@@ -551,19 +551,36 @@ onMounted(() => {
 
 // ========== 初始化方法 ==========
 /** 初始化当前登录用户信息 */
+/** 初始化当前登录用户信息 */
 const initUserInfo = () => {
   try {
     const userData = localStorage.getItem('userData')
     if (userData) {
       const parsed = JSON.parse(userData)
+      // 核心修复：智能处理头像路径，去重+兼容
+      let avatarUrl = parsed.avatarUrl || ''
+      if (avatarUrl) {
+        if (avatarUrl.startsWith('http')) {
+          // 完整URL：先去重重复前缀，再替换旧前缀
+          avatarUrl = avatarUrl.replace(/\/user-img\/user-img\//, '/user-img/')
+          avatarUrl = avatarUrl.replace('/avatar/', '/user-img/')
+        } else if (avatarUrl.startsWith('/user-img/')) {
+          // 带前缀的路径：直接拼接域名
+          avatarUrl = `${BASE_URL}${avatarUrl}`
+        } else {
+          // 纯文件名：拼接前缀
+          avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`
+        }
+      } else {
+        avatarUrl = defaultAvatar
+      }
+
       userInfo.value = {
         isLogin: true,
         userId: parsed.userId || '',
         username: parsed.username || '',
         email: parsed.email || '',
-        avatarUrl: parsed.avatarUrl
-          ? (parsed.avatarUrl.startsWith('http') ? parsed.avatarUrl : `${BASE_URL}/avatar/${encodeURIComponent(parsed.avatarUrl)}`)
-          : defaultAvatar
+        avatarUrl: avatarUrl // 使用修复后的路径
       }
       nicknameForm.username = userInfo.value.username
       // 初始化地址
@@ -784,7 +801,7 @@ const handleBack = () => {
   }
 }
 
-/** 头像上传处理（适配中文文件名） */
+/** 头像上传处理（完整修复：增加错误详情、兼容不同响应格式） */
 const handleAvatarUpload = async (e) => {
   const file = e.target.files[0]
   if (!file) return
@@ -811,29 +828,69 @@ const handleAvatarUpload = async (e) => {
     formData.append('file', file)
     formData.append('userId', userInfo.value.userId)
 
-    // 4. 调用后端接口
+    // 4. 调用后端接口（增加超时、跨域配置）
     const res = await axios.post(`${BASE_URL}/user/uploadAvatar`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      transformRequest: [(data) => data]
+      headers: { 
+        'Content-Type': 'multipart/form-data',
+        'Access-Control-Allow-Origin': '*' // 解决跨域问题
+      },
+      transformRequest: [(data) => data],
+      timeout: 30000, // 超时时间30秒
+      withCredentials: true // 携带cookie（如果需要）
     })
 
-    // 5. 处理响应
+    // 5. 处理响应（兼容不同的返回格式）
     loading.close()
-    if (res.data.code === 200) {
-      userInfo.value.avatarUrl = res.data.data
+    if (res.data && res.data.code === 200) {
+      const fileName = res.data.data || res.data.fileName || res.data.result
+      if (!fileName) {
+        return ElMessage.error('上传成功但未获取到头像文件名')
+      }
+      
+      // 核心修复：智能拼接路径，避免重复前缀
+      let finalAvatarUrl = ''
+      if (fileName.startsWith('/user-img/')) {
+        // 后端返回带前缀，直接拼接域名
+        finalAvatarUrl = `${BASE_URL}${fileName}`
+      } else {
+        // 纯文件名，手动拼接前缀
+        finalAvatarUrl = `${BASE_URL}/user-img/${fileName}`
+      }
+      userInfo.value.avatarUrl = finalAvatarUrl
+      
+      // 核心修复：缓存只存纯文件名，移除前缀
+      let cacheAvatarUrl = fileName
+      if (cacheAvatarUrl.startsWith('/user-img/')) {
+        cacheAvatarUrl = cacheAvatarUrl.replace('/user-img/', '')
+      }
       // 更新本地缓存
       localStorage.setItem('userData', JSON.stringify({
         ...JSON.parse(localStorage.getItem('userData')),
-        avatarUrl: res.data.data
+        avatarUrl: cacheAvatarUrl // 仅存纯文件名
       }))
       ElMessage.success('头像上传成功')
     } else {
-      ElMessage.error(res.data.msg || '头像上传失败')
+      ElMessage.error(res.data?.msg || '头像上传失败（后端返回非200状态）')
     }
   } catch (err) {
     loading.close()
-    console.error('头像上传失败：', err)
-    ElMessage.error('头像上传失败，请检查网络或联系管理员')
+    // 详细打印错误信息，方便排查
+    console.error('头像上传失败详情：', {
+      url: `${BASE_URL}/user/uploadAvatar`,
+      error: err.message,
+      status: err.response?.status,
+      data: err.response?.data
+    })
+    // 分场景提示错误
+    if (err.message.includes('timeout')) {
+      ElMessage.error('头像上传超时，请检查网络或重试')
+    } else if (err.message.includes('404')) {
+      ElMessage.error('上传接口不存在，请检查后端接口地址是否正确')
+    } else if (err.message.includes('500')) {
+      ElMessage.error('服务器内部错误，请联系管理员')
+    } else {
+      ElMessage.error('头像上传失败，请检查网络或联系管理员')
+    }
   }
 }
 
@@ -911,18 +968,36 @@ const openSwitchAccount = () => {
   switchAccountDialogVisible.value = true
 }
 
-/** 切换到指定账号 */
+/** 切换到指定账号（核心修复：强制替换头像路径） */
 const switchToAccount = (account) => {
   try {
-    localStorage.setItem('userData', JSON.stringify(account))
+    // 核心修复：处理账号头像路径
+    let avatarUrl = account.avatarUrl || ''
+    if (avatarUrl) {
+      if (avatarUrl.startsWith('http')) {
+        avatarUrl = avatarUrl.replace('/avatar/', '/user-img/')
+      } else {
+        avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`
+      }
+    } else {
+      avatarUrl = defaultAvatar
+    }
+
+    // 更新缓存（只存文件名）
+    const accountData = {
+      ...account,
+      avatarUrl: account.avatarUrl && !account.avatarUrl.startsWith('http') 
+        ? account.avatarUrl 
+        : (account.avatarUrl || '')
+    }
+    localStorage.setItem('userData', JSON.stringify(accountData))
+    
     userInfo.value = {
       isLogin: true,
       userId: account.userId,
       username: account.username,
       email: account.email,
-      avatarUrl: account.avatarUrl
-        ? `${BASE_URL}/avatar/${encodeURIComponent(account.avatarUrl)}`
-        : defaultAvatar
+      avatarUrl: avatarUrl
     }
     switchAccountDialogVisible.value = false
     ElMessage.success(`已切换到账号：${account.username}`)
@@ -952,6 +1027,7 @@ const handleLogin = async () => {
 
     if (res.data.code === 200) {
       const newAccount = res.data.data
+      // 修复：缓存只存文件名，不存完整URL
       newAccount.avatarUrl = newAccount.avatarUrl || ''
 
       // 保存到账号列表

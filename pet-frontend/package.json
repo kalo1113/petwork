@@ -11,12 +11,13 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
     "@mdi/font": "^7.4.47",
-    "axios": "^1.6.8",
+    "axios": "^1.13.2",
     "china-area-data": "^5.0.1",
     "core-js": "^3.8.3",
     "dayjs": "^1.11.10",
-    "element-plus": "^2.6.3",
+    "element-plus": "^2.13.0",
     "numeral": "^2.0.6",
+    "vite": "^7.3.1",
     "vue": "^3.2.13",
     "vue-router": "^4.2.5",
     "vuetify": "^3.5.8"

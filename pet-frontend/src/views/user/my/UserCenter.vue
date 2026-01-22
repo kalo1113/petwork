@@ -217,7 +217,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, getCurrentInstance } from 'vue'
 import { ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { login, register, getPetListByUserId } from '@/api/user/index.js'
@@ -228,7 +228,8 @@ import maleIcon from '@/assets/images/我的图标/男.svg'
 import femaleIcon from '@/assets/images/我的图标/女.svg'
 
 const router = useRouter()
-
+const { proxy } = getCurrentInstance()
+const BASE_URL = proxy.$BASE_URL
 // 登录状态管理
 const userInfo = ref({
   isLogin: false,
@@ -270,14 +271,16 @@ const checkLoginStatus = () => {
   const userData = localStorage.getItem('userData')
   if (userData) {
     const parsed = JSON.parse(userData)
-    const avatarUrl = parsed.avatarUrl || defaultAvatar
+    // 重点修改：拼接正确的 user-img 路径
+    const avatarUrl = parsed.avatarUrl 
+      ? `${BASE_URL}/user-img/${parsed.avatarUrl.split('/').pop()}` 
+      : defaultAvatar
     userInfo.value = {
       isLogin: true,
       username: parsed.username || `宝友${parsed.userId?.toString().slice(-4)}`,
       userId: parsed.userId,
-      avatarUrl: avatarUrl
+      avatarUrl: avatarUrl // 赋值拼接后的完整路径
     }
-    // 获取宠物列表
     fetchAndPrintPetList()
   }
 }
