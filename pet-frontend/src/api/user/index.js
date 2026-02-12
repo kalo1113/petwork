@@ -21,8 +21,8 @@ const createAxiosInstance = (baseURL) => {
     },
     (error) => {
       console.error('请求异常：', error)
-      // 统一错误提示
-      ElMessage.error(error.response?.data || '请求失败，请重试')
+      // 优化错误提示：优先取后端返回的msg，再降级
+      ElMessage.error(error.response?.data?.msg || error.response?.data || '请求失败，请重试')
       // eslint-disable-next-line prefer-promise-reject-errors
       return Promise.reject({
         code: error.response?.status || 500,
@@ -49,6 +49,8 @@ const orderAxios = createAxiosInstance(BASE_URL)
 const addressAxios = createAxiosInstance(BASE_URL)
 // 宠物保险模块实例（新增）
 const insuranceAxios = createAxiosInstance(BASE_URL)
+// 宠物保险订单模块实例（新增，复用BASE_URL）
+const insuranceOrderAxios = createAxiosInstance(BASE_URL)
 
 // ===================== 用户接口 =====================
 // 登录
@@ -243,6 +245,18 @@ export const updatePetPhoto = (data) => {
 }
 
 // ===================== 商品接口 =====================
+// 获取用户月度补贴信息（每月限额、已用额度等）
+export const getMonthlySubsidyInfo = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询补贴信息')
+    throw new Error('userId不是有效数字')
+  }
+  // 后端接口路径，可根据实际情况调整
+  return userAxios.get('/user/subsidy/monthly', {
+    params: { userId: Number(userId) },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
 // 获取商品列表（简化后的loadProducts）
 export const getProductList = async () => {
   try {
@@ -335,6 +349,24 @@ export const deleteCartItem = async (cartId) => {
 }
 
 // ===================== 订单接口（新增） =====================
+// ========== 新增：确认收货接口 ==========
+export const confirmReceiveOrder = async (orderId, userId) => {
+  if (isNaN(Number(orderId))) {
+    ElMessage.error('订单ID异常，无法确认收货')
+    throw new Error('orderId无效')
+  }
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法确认收货')
+    throw new Error('userId无效')
+  }
+  return orderAxios.post('/order/confirmReceive', null, {
+    params: {
+      orderId: Number(orderId),
+      userId: Number(userId)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
 // 1. 创建订单（核心：支持多商品）
 export const createOrder = async (userId, itemList, receiverName, receiverPhone, receiverAddress) => {
   // 参数校验
@@ -679,14 +711,342 @@ export const getInsuranceImgUrl = (imgPath) => {
   if (!imgPath || imgPath.trim() === '') {
     // 方案1：返回空字符串（推荐，前端使用时可加默认图）
     return '';
-    
-    // 方案2：返回公共占位符URL（无需本地文件）
-    // return 'https://via.placeholder.com/200x150?text=保险默认图';
   }
-  // 已包含完整域名直接返回
+  // 已包含完整域名直接返回（加时间戳）
   if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
-    return imgPath;
+    return `${imgPath}?t=${new Date().getTime()}`; // 核心：加时间戳
   }
-  // 拼接基础URL（适配后端静态资源映射）
-  return `${BASE_URL}${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
+  // 拼接基础URL（适配后端静态资源映射）+ 时间戳
+  const fullUrl = `${BASE_URL}${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
+  return `${fullUrl}?t=${new Date().getTime()}`; // 核心：加时间戳
 };
+
+// ===================== 宠物保险订单接口（新增核心，适配后端PetInsuranceOrderController） =====================
+// 1. 创建宠物保险订单（严格匹配后端校验逻辑）
+export const createInsuranceOrder = async (orderData) => {
+  // 前端参数前置校验（和后端PetInsuranceOrderController完全一致）
+  if (orderData.userId === null || orderData.userId === undefined) {
+    ElMessage.error('数据错误：用户ID不能为空')
+    throw new Error('用户ID不能为空')
+  }
+  if (orderData.petId === null || orderData.petId === undefined) {
+    ElMessage.error('数据错误：宠物ID不能为空')
+    throw new Error('宠物ID不能为空')
+  }
+  if (orderData.insuranceId === null || orderData.insuranceId === undefined) {
+    ElMessage.error('数据错误：保险产品ID不能为空')
+    throw new Error('保险产品ID不能为空')
+  }
+  if (!orderData.insuranceName || orderData.insuranceName.trim().length === 0) {
+    ElMessage.error('数据错误：保险产品名称不能为空')
+    throw new Error('保险产品名称不能为空')
+  }
+  if (orderData.paymentMethod === null || orderData.paymentMethod === undefined) {
+    ElMessage.error('数据错误：缴费方式不能为空')
+    throw new Error('缴费方式不能为空')
+  } else if (orderData.paymentMethod !== "monthly" && orderData.paymentMethod !== "lump") {
+    ElMessage.error('数据错误：缴费方式无效（仅支持monthly-分期/lump-全额）')
+    throw new Error('缴费方式无效')
+  }
+  if (orderData.discountPremium === null || orderData.discountPremium === undefined) {
+    ElMessage.error('数据错误：优惠保费不能为空')
+    throw new Error('优惠保费不能为空')
+  } else if (Number(orderData.discountPremium) <= 0) {
+    ElMessage.error('数据错误：优惠保费不能为0或负数')
+    throw new Error('优惠保费不合法')
+  }
+  if (orderData.guaranteeCycle === null || orderData.guaranteeCycle === undefined) {
+    ElMessage.error('数据错误：保障周期不能为空')
+    throw new Error('保障周期不能为空')
+  } else if (Number(orderData.guaranteeCycle) <= 0) {
+    ElMessage.error('数据错误：保障周期必须为正整数')
+    throw new Error('保障周期不合法')
+  }
+
+  // 发起创建订单请求（后端路径：/api/order/create）
+  return insuranceOrderAxios.post('/api/order/create', orderData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 2. 根据用户ID查询宠物保险订单列表（后端路径：/api/order/user/{userId}）
+export const getInsuranceOrderListByUserId = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询保险订单')
+    throw new Error('userId不是有效数字')
+  }
+  // 严格匹配后端路径：/api/order/user/{userId}
+  return insuranceOrderAxios.get(`/api/order/user/${Number(userId)}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 3. 更新宠物保险订单状态（后端路径：/api/order/updateStatus）
+export const updateInsuranceOrderStatus = async (orderId, status) => {
+  if (isNaN(Number(orderId))) {
+    ElMessage.error('订单ID异常，无法更新状态')
+    throw new Error('orderId不是有效数字')
+  }
+  // 后端状态校验：0-已支付 1-已生效 2-已取消
+  if (status < 0 || status > 2) {
+    ElMessage.error('状态值无效（仅支持0-已支付 1-已生效 2-已取消）')
+    throw new Error('status不合法')
+  }
+  // 后端参数：orderId + status（RequestParam）
+  return insuranceOrderAxios.post('/api/order/updateStatus', null, {
+    params: {
+      orderId: Number(orderId),
+      status: Number(status)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 4. 根据订单ID查询宠物保险订单详情（后端路径：/api/order/{id}）
+export const getInsuranceOrderDetail = async (orderId) => {
+  if (isNaN(Number(orderId))) {
+    ElMessage.error('订单ID异常，无法查询保险订单详情')
+    throw new Error('orderId不是有效数字')
+  }
+  // 严格匹配后端路径：/api/order/{id}
+  return insuranceOrderAxios.get(`/api/order/${Number(orderId)}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 5. 扩展：按状态筛选用户的宠物保险订单（前端封装）
+export const getInsuranceOrderListByStatus = async (userId, status) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询保险订单')
+    throw new Error('userId不是有效数字')
+  }
+  if (status < 0 || status > 2) {
+    ElMessage.error('订单状态无效（仅支持0-已支付/1-已生效/2-已取消）')
+    throw new Error('status不合法')
+  }
+  // 先获取用户所有保险订单，再前端筛选状态
+  const allOrders = await getInsuranceOrderListByUserId(userId)
+  return allOrders.filter(order => order.orderStatus === status)
+}
+
+// 6. 扩展：删除宠物保险订单（备用接口）
+export const deleteInsuranceOrder = async (orderId) => {
+  if (isNaN(Number(orderId))) {
+    ElMessage.error('订单ID异常，无法删除保险订单')
+    throw new Error('orderId不是有效数字')
+  }
+  // 注意：后端未提供删除接口，如需使用请先在后端添加 /api/order/delete/{id} 接口
+  return insuranceOrderAxios.post(`/api/order/delete/${orderId}`, {}, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 7. 新增：一次性缴清剩余保费接口（核心补充）
+export const payInsuranceOrderRemaining = async (orderId, userId) => {
+  // 严格的参数校验（和后端保持一致）
+  if (orderId === null || orderId === undefined || isNaN(Number(orderId)) || Number(orderId) <= 0) {
+    ElMessage.error('数据错误：订单ID必须为正整数')
+    throw new Error('订单ID不合法')
+  }
+  if (userId === null || userId === undefined || isNaN(Number(userId)) || Number(userId) <= 0) {
+    ElMessage.error('数据错误：用户ID必须为正整数')
+    throw new Error('用户ID不合法')
+  }
+
+  // 调用后端接口：/api/order/payRemaining（RequestParam传参）
+  return insuranceOrderAxios.post('/api/order/payRemaining', null, {
+    params: {
+      orderId: Number(orderId),
+      userId: Number(userId)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// ===================== 用户保险权益接口（新增，适配后端UserInsuranceBenefitController） =====================
+// 1. 创建用户保险权益记录（购买保险后初始化）
+export const createInsuranceBenefit = async (benefitData) => {
+  // 参数校验（和后端完全对齐）
+  if (benefitData.userId === null || benefitData.userId === undefined || isNaN(Number(benefitData.userId))) {
+    ElMessage.error('用户ID异常，无法创建权益记录')
+    throw new Error('userId不是有效数字')
+  }
+  if (benefitData.insuranceOrderId === null || benefitData.insuranceOrderId === undefined || isNaN(Number(benefitData.insuranceOrderId))) {
+    ElMessage.error('保险订单ID异常，无法创建权益记录')
+    throw new Error('insuranceOrderId不是有效数字')
+  }
+  if (benefitData.insuranceId === null || benefitData.insuranceId === undefined || isNaN(Number(benefitData.insuranceId))) {
+    ElMessage.error('保险产品ID异常，无法创建权益记录')
+    throw new Error('insuranceId不是有效数字')
+  }
+  if (benefitData.petId === null || benefitData.petId === undefined || isNaN(Number(benefitData.petId))) {
+    ElMessage.error('宠物ID异常，无法创建权益记录')
+    throw new Error('petId不是有效数字')
+  }
+  if (!benefitData.insuranceExpireTime) {
+    ElMessage.error('保险到期时间不能为空')
+    throw new Error('insuranceExpireTime为空')
+  }
+  
+  // 发起创建请求
+  return insuranceOrderAxios.post('/insurance/benefit/create', benefitData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 2. 根据保险订单ID查询用户保险权益
+export const getInsuranceBenefitByOrderId = async (insuranceOrderId) => {
+  if (isNaN(Number(insuranceOrderId))) {
+    ElMessage.error('保险订单ID异常，无法查询权益')
+    throw new Error('insuranceOrderId不是有效数字')
+  }
+  return insuranceOrderAxios.get(`/insurance/benefit/order/${Number(insuranceOrderId)}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 3. 根据用户ID查询所有保险权益
+export const getInsuranceBenefitListByUserId = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询权益列表')
+    throw new Error('userId不是有效数字')
+  }
+  return insuranceOrderAxios.get(`/insurance/benefit/user/${Number(userId)}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 4. 根据宠物ID查询权益记录
+export const getInsuranceBenefitListByPetId = async (petId) => {
+  if (isNaN(Number(petId))) {
+    ElMessage.error('宠物ID异常，无法查询权益列表')
+    throw new Error('petId不是有效数字')
+  }
+  return insuranceOrderAxios.get(`/insurance/benefit/pet/${Number(petId)}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 5. 更新剩余保额（理赔后扣减）
+export const updateRemainingInsuranceAmount = async (benefitId, amount) => {
+  if (isNaN(Number(benefitId))) {
+    ElMessage.error('权益ID异常，无法更新保额')
+    throw new Error('benefitId不是有效数字')
+  }
+  if (isNaN(Number(amount)) || Number(amount) < 0) {
+    ElMessage.error('剩余保额不能为负数')
+    throw new Error('amount不合法')
+  }
+  return insuranceOrderAxios.post('/insurance/benefit/updateAmount', null, {
+    params: {
+      benefitId: Number(benefitId),
+      amount: Number(amount)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 6. 更新月消费补贴余额（使用/发放后更新）
+export const updateMonthlySubsidyBalance = async (benefitId, balance) => {
+  if (isNaN(Number(benefitId))) {
+    ElMessage.error('权益ID异常，无法更新补贴余额')
+    throw new Error('benefitId不是有效数字')
+  }
+  if (isNaN(Number(balance)) || Number(balance) < 0) {
+    ElMessage.error('补贴余额不能为负数')
+    throw new Error('balance不合法')
+  }
+  return insuranceOrderAxios.post('/insurance/benefit/updateSubsidy', null, {
+    params: {
+      benefitId: Number(benefitId),
+      balance: Number(balance)
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 7. 更新剩余赠送服务（使用后扣减次数）
+export const updateFreeServiceRemaining = async (benefitId, serviceJson) => {
+  if (isNaN(Number(benefitId))) {
+    ElMessage.error('权益ID异常，无法更新赠送服务')
+    throw new Error('benefitId不是有效数字')
+  }
+  // 校验JSON格式
+  try {
+    JSON.parse(serviceJson)
+  } catch (err) {
+    ElMessage.error('赠送服务格式错误（需为合法JSON字符串）')
+    throw new Error('serviceJson不是合法JSON')
+  }
+  return insuranceOrderAxios.post('/insurance/benefit/updateService', null, {
+    params: {
+      benefitId: Number(benefitId),
+      serviceJson: serviceJson
+    },
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 8. 分页查询权益记录（管理员后台使用）
+export const getInsuranceBenefitPage = async (pageNum = 1, pageSize = 10, userId) => {
+  // 参数校验
+  if (isNaN(Number(pageNum)) || pageNum < 1) {
+    ElMessage.error('页码必须大于0')
+    throw new Error('pageNum不合法')
+  }
+  if (isNaN(Number(pageSize)) || pageSize < 1 || pageSize > 100) {
+    ElMessage.error('每页条数必须在1-100之间')
+    throw new Error('pageSize不合法')
+  }
+  // 构建查询参数
+  const params = {
+    pageNum: Number(pageNum),
+    pageSize: Number(pageSize)
+  }
+  if (userId !== undefined && !isNaN(Number(userId))) {
+    params.userId = Number(userId)
+  }
+  // 发起请求
+  return insuranceOrderAxios.get('/insurance/benefit/page', {
+    params: params,
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 9. 逻辑删除权益记录
+export const deleteInsuranceBenefit = async (benefitId) => {
+  if (isNaN(Number(benefitId))) {
+    ElMessage.error('权益ID异常，无法删除')
+    throw new Error('benefitId不是有效数字')
+  }
+  return insuranceOrderAxios.post(`/insurance/benefit/delete/${Number(benefitId)}`, {}, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+// 扩展工具函数：更新赠送服务次数（前端封装，简化调用）
+export const updateFreeServiceCount = async (benefitId, serviceKey, reduceCount = 1) => {
+  // 1. 先查询当前权益记录
+  const benefit = await getInsuranceBenefitByOrderId(benefitId)
+  if (!benefit || !benefit.freeServiceRemaining) {
+    ElMessage.error('暂无赠送服务记录')
+    throw new Error('免费服务记录为空')
+  }
+  
+  // 2. 解析JSON并更新次数
+  let serviceObj = JSON.parse(benefit.freeServiceRemaining)
+  if (!serviceObj[serviceKey]) {
+    ElMessage.error(`暂无${serviceKey}服务次数`)
+    throw new Error(`${serviceKey}服务不存在`)
+  }
+  const newCount = serviceObj[serviceKey] - reduceCount
+  if (newCount < 0) {
+    ElMessage.error(`${serviceKey}服务次数不足`)
+    throw new Error(`${serviceKey}服务次数不足`)
+  }
+  serviceObj[serviceKey] = newCount
+  
+  // 3. 转换为JSON字符串并更新
+  const newServiceJson = JSON.stringify(serviceObj)
+  return updateFreeServiceRemaining(benefit.id, newServiceJson)
+}

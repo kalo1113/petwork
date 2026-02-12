@@ -1,6 +1,8 @@
 package org.example.petbackend.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.petbackend.common.Result;
 import org.example.petbackend.entity.PetOrderMain;
 import org.example.petbackend.entity.PetOrderItem;
@@ -13,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.*;
@@ -248,7 +251,58 @@ public class PetOrderController {
         return Result.success(null, "订单状态已更新为：" + statusDesc);
     }
 
-    // 5. 新增：删除订单（修复后）
+    // 5. 新增：确认收货接口（核心补充）
+    @PostMapping("/confirmReceive")
+    public Result<?> confirmReceiveOrder(
+            @RequestParam Long orderId,
+            @RequestParam Integer userId) {
+        // 1. 校验用户是否存在
+        if (userService.getById(userId) == null) {
+            log.warn("确认收货失败：用户不存在，userId={}", userId);
+            return Result.fail("用户不存在，无法确认收货");
+        }
+
+        // 2. 校验订单是否存在
+        PetOrderMain orderMain = orderMainService.getById(orderId);
+        if (orderMain == null) {
+            log.warn("确认收货失败：订单不存在，orderId={}", orderId);
+            return Result.fail("订单不存在，无法确认收货");
+        }
+
+        // 3. 校验订单归属（防止用户确认他人订单）
+        if (!orderMain.getUserId().equals(userId)) {
+            log.warn("确认收货失败：订单归属不符，orderId={}, 操作人userId={}, 订单所属userId={}",
+                    orderId, userId, orderMain.getUserId());
+            return Result.fail("无权确认该订单收货");
+        }
+
+        // 4. 校验订单状态（仅待收货状态可确认收货）
+        if (orderMain.getOrderStatus() != 2) {
+            String currentStatus = switch (orderMain.getOrderStatus()) {
+                case 0 -> "待付款";
+                case 1 -> "待发货";
+                case 3 -> "已完成";
+                case 4 -> "已取消";
+                default -> "未知状态";
+            };
+            log.warn("确认收货失败：订单状态不合法，orderId={}, 当前状态={}", orderId, currentStatus);
+            return Result.fail("仅待收货状态的订单可确认收货，当前订单状态：" + currentStatus);
+        }
+
+        // 5. 更新订单状态为已完成（3）
+        orderMain.setOrderStatus(3);
+        boolean updateSuccess = orderMainService.updateById(orderMain);
+
+        if (updateSuccess) {
+            log.info("确认收货成功，orderId={}, userId={}", orderId, userId);
+            return Result.success(null, "确认收货成功，订单状态已更新为已完成");
+        } else {
+            log.error("确认收货失败：订单状态更新失败，orderId={}", orderId);
+            return Result.fail("确认收货失败，请稍后重试");
+        }
+    }
+
+    // 6. 新增：删除订单（修复后）
     @PostMapping("/delete")
     public Result<?> deleteOrder(@RequestParam Long orderId) {
         // 1. 删除订单明细表
@@ -266,6 +320,120 @@ public class PetOrderController {
             log.error("订单删除失败，orderId={}", orderId);
             return Result.fail("订单删除失败");
         }
+    }
+
+    // ========== 优化：商家端接口 - 分页查询所有商品订单（完善订单号/用户ID查询） ==========
+    @GetMapping("/merchant/page")
+    public Result<?> getMerchantOrderPage(
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Integer orderStatus,  // 可选：按状态筛选
+            @RequestParam(required = false) Long orderId,         // 可选：按订单ID精准查询
+            @RequestParam(required = false) String orderIdLike,   // 新增：按订单ID模糊查询
+            @RequestParam(required = false) Integer userId,       // 可选：按用户ID精准查询
+            @RequestParam(required = false) String userIdLike)    // 新增：按用户ID模糊查询
+    {
+        // 1. 初始化分页对象
+        Page<PetOrderMain> page = new Page<>(pageNum, pageSize);
+
+        // 2. 构建查询条件（完善订单号/用户ID查询逻辑）
+        LambdaQueryWrapper<PetOrderMain> queryWrapper = Wrappers.lambdaQuery();
+
+        // 2.1 订单状态筛选（原有逻辑）
+        if (orderStatus != null) {
+            queryWrapper.eq(PetOrderMain::getOrderStatus, orderStatus);
+        }
+
+        // 2.2 订单ID查询（优先精准匹配，再模糊匹配）
+        if (orderId != null) {
+            // 精准匹配订单ID（完全相等）
+            queryWrapper.eq(PetOrderMain::getOrderId, orderId);
+        } else if (orderIdLike != null && !orderIdLike.trim().isEmpty()) {
+            // 模糊匹配订单ID（支持输入部分订单号查询）
+            // 注意：Long类型字段模糊查询需转字符串处理
+            queryWrapper.apply("CAST(order_id AS CHAR) LIKE {0}", "%" + orderIdLike.trim() + "%");
+        }
+
+        // 2.3 用户ID查询（优先精准匹配，再模糊匹配）
+        if (userId != null) {
+            // 精准匹配用户ID（完全相等）
+            queryWrapper.eq(PetOrderMain::getUserId, userId);
+        } else if (userIdLike != null && !userIdLike.trim().isEmpty()) {
+            // 模糊匹配用户ID（支持输入部分用户ID查询）
+            queryWrapper.apply("CAST(user_id AS CHAR) LIKE {0}", "%" + userIdLike.trim() + "%");
+        }
+
+        // 按创建时间倒序，最新订单在前
+        queryWrapper.orderByDesc(PetOrderMain::getCreateTime);
+
+        // 3. 分页查询订单主表数据
+        Page<PetOrderMain> orderPage = orderMainService.page(page, queryWrapper);
+
+        // 4. 组装返回数据（关联明细表+商品图片）
+        List<Map<String, Object>> orderList = new ArrayList<>();
+        for (PetOrderMain orderMain : orderPage.getRecords()) {
+            // 4.1 封装订单主表信息（完全匹配你的PetOrderMain实体字段）
+            Map<String, Object> orderMap = new HashMap<>();
+            orderMap.put("orderId", orderMain.getOrderId());
+            orderMap.put("userId", orderMain.getUserId());
+            orderMap.put("totalAmount", orderMain.getTotalAmount());
+            orderMap.put("orderStatus", orderMain.getOrderStatus());
+            orderMap.put("receiverName", orderMain.getReceiverName());
+            orderMap.put("receiverPhone", orderMain.getReceiverPhone());
+            orderMap.put("receiverAddress", orderMain.getReceiverAddress());
+            orderMap.put("createTime", orderMain.getCreateTime());
+            orderMap.put("updateTime", orderMain.getUpdateTime());
+
+            // 4.2 查询该订单的明细表数据（适配你的PetOrderItem实体）
+            List<PetOrderItem> itemList = orderItemService.lambdaQuery()
+                    .eq(PetOrderItem::getOrderId, orderMain.getOrderId())
+                    .list();
+
+            // 4.3 封装明细表+商品图片信息
+            List<Map<String, Object>> itemMapList = new ArrayList<>();
+            for (PetOrderItem item : itemList) {
+                Map<String, Object> itemMap = new HashMap<>();
+                // 明细表字段（完全匹配PetOrderItem实体）
+                itemMap.put("id", item.getId());
+                itemMap.put("orderId", item.getOrderId());
+                itemMap.put("productId", item.getProductId());
+                itemMap.put("productTitle", item.getProductTitle()); // 用明细表的商品名称快照
+                itemMap.put("productPrice", item.getProductPrice());
+                itemMap.put("productCount", item.getProductCount());
+                itemMap.put("itemAmount", item.getItemAmount());
+
+                // 4.4 关联商品表，获取图片信息
+                Product product = productService.getProductById(item.getProductId());
+                if (product != null) {
+                    // 拼接完整的商品图片URL（复用你现有的工具方法）
+                    String fullImgUrl = buildFullImgUrl(product.getImgPath());
+                    itemMap.put("productImgPath", fullImgUrl);       // 商品图片完整URL
+                    itemMap.put("productNowPrice", product.getNowPrice()); // 商品当前价格
+                    itemMap.put("productOldPrice", product.getOldPrice()); // 商品原价
+                    itemMap.put("productDescription", Optional.ofNullable(product.getDescription()).orElse("暂无介绍"));
+                } else {
+                    // 商品不存在时的兜底处理
+                    itemMap.put("productImgPath", "");
+                    itemMap.put("productNowPrice", "0.00");
+                    itemMap.put("productOldPrice", "0.00");
+                    itemMap.put("productDescription", "商品已下架");
+                }
+                itemMapList.add(itemMap);
+            }
+
+            orderMap.put("itemList", itemMapList); // 关联明细表数据
+            orderList.add(orderMap);
+        }
+
+        // 5. 封装分页返回结果
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", orderList);       // 当前页订单数据
+        result.put("total", orderPage.getTotal()); // 总订单数
+        result.put("pageNum", pageNum);         // 当前页码
+        result.put("pageSize", pageSize);       // 每页条数
+        result.put("pages", orderPage.getPages()); // 总页数
+
+        return Result.success(result, "商家端订单列表查询成功");
     }
 
     /**

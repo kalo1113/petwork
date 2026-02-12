@@ -91,33 +91,71 @@
       <!-- 我的订单、宠物保障等原有模块保持不变 -->
       <div class="my-orders white-bg">
         <h3>我的订单</h3>
-<div class="order-tabs">
-  <div class="tab-item" @click="handleOrderTabClick('effective')">
-    <img src="@/assets/images/我的图标/已生效.svg" alt="已生效" class="order-icon" />
-    <span>已生效</span>
-  </div>
-  <div class="tab-item" @click="handleOrderTabClick('wallet')">
-    <img src="@/assets/images/我的图标/我的钱包.svg" alt="我的钱包" class="order-icon" />
-    <span>我的钱包</span>
-  </div>
-  <div class="tab-item" @click="handleOrderTabClick('deliver')">
-    <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
-    <span>待发货</span>
-  </div>
-  <div class="tab-item" @click="handleOrderTabClick('receive')">
-    <img src="@/assets/images/我的图标/待收货.svg" alt="待收货" class="order-icon" />
-    <span>待收货</span>
-  </div>
-  <div class="tab-item" @click="handleOrderTabClick('comment')">
-    <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
-    <span>待评价</span>
-  </div>
-</div>
+        <div class="order-tabs">
+          <div class="tab-item" @click="handleOrderTabClick('effective')">
+            <img src="@/assets/images/我的图标/已生效.svg" alt="已生效" class="order-icon" />
+            <span>我的保单</span>
+          </div>
+          <div class="tab-item" @click="handleOrderTabClick('wallet')">
+            <img src="@/assets/images/我的图标/我的钱包.svg" alt="我的钱包" class="order-icon" />
+            <span>我的钱包</span>
+          </div>
+          <div class="tab-item" @click="handleOrderTabClick('deliver')">
+            <img src="@/assets/images/我的图标/待发货.svg" alt="待发货" class="order-icon" />
+            <span>待发货</span>
+          </div>
+          <div class="tab-item" @click="handleOrderTabClick('receive')">
+            <img src="@/assets/images/我的图标/待收货.svg" alt="待收货" class="order-icon" />
+            <span>待收货</span>
+          </div>
+          <div class="tab-item" @click="handleOrderTabClick('comment')">
+            <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
+            <span>待评价</span>
+          </div>
+        </div>
       </div>
 
+      <!-- 宠物保障模块（核心修改） -->
       <div class="pet-guarantee white-bg">
         <h3>宠物保障</h3>
-        <div class="guarantee-card">
+        <!-- 有保险权益时展示权益列表 -->
+        <div v-if="insuranceBenefits.length" class="benefit-list">
+          <div 
+            v-for="benefit in insuranceBenefits" 
+            :key="benefit.benefitId" 
+            class="benefit-card"
+          >
+            <!-- 权益标题+状态 -->
+            <div class="benefit-header">
+              <h4 class="benefit-name">{{ benefit.insuranceName }}</h4>
+              <span class="benefit-status" :class="benefit.status === '有效' ? 'active' : 'expired'">
+                {{ benefit.status }}
+              </span>
+            </div>
+            <!-- 权益详情 -->
+            <div class="benefit-details">
+              <div class="benefit-item">
+                <span class="label">保障期限：</span>
+                <span class="value">{{ benefit.startTime }} - {{ benefit.endTime }}</span>
+              </div>
+              <div class="benefit-item">
+                <span class="label">剩余补贴：</span>
+                <span class="value">¥{{ benefit.remainingSubsidy.toFixed(2) }}</span>
+              </div>
+              <div class="benefit-item">
+                <span class="label">赠送服务：</span>
+                <span class="value">{{ benefit.coverage }}</span>
+              </div>
+            </div>
+            <!-- 权益操作按钮 -->
+            <div class="benefit-actions">
+              <button class="btn mini-btn" @click="handleBenefitDetail(benefit)">查看详情</button>
+              <button class="btn mini-btn primary" v-if="benefit.status === '有效'" @click="handleUseBenefit(benefit)">使用权益</button>
+            </div>
+          </div>
+        </div>
+        <!-- 无保险权益时显示原样式 -->
+        <div v-else class="guarantee-card">
           <div class="guarantee-content">
             <p class="guarantee-text">当前暂无保障</p>
             <p class="guarantee-desc">快去给爱宠开启一份保障吧</p>
@@ -217,19 +255,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, getCurrentInstance } from 'vue'
+import { ref, reactive, onMounted, computed, getCurrentInstance, watch } from 'vue'
 import { ElDialog, ElForm, ElFormItem, ElInput, ElButton, ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { login, register, getPetListByUserId } from '@/api/user/index.js'
+// 正确导入所有需要的接口
+import { 
+  login, register, getPetListByUserId,
+  getInsuranceBenefitListByPetId ,getInsuranceDetail, getInsuranceOrderDetail
+} from '@/api/user/index.js'
 import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
 import defaultPetAvatar from '@/assets/images/我的图标/添加.svg'
-// 导入性别图标（修复动态绑定路径问题）
 import maleIcon from '@/assets/images/我的图标/男.svg'
 import femaleIcon from '@/assets/images/我的图标/女.svg'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 const BASE_URL = proxy.$BASE_URL
+
 // 登录状态管理
 const userInfo = ref({
   isLogin: false,
@@ -247,31 +289,255 @@ const errorMsg = ref('')
 const loginForm = reactive({ email: '', password: '' })
 const registerForm = reactive({ username: '', email: '', password: '' })
 
-// ========== 核心：宠物列表+选项卡激活索引 ==========
+// 宠物列表+选项卡
 const petList = ref([])
-const activePetIndex = ref(0) // 默认选中第一个宠物
-
-// 计算属性：当前选中的宠物
+const activePetIndex = ref(0)
 const currentPet = computed(() => {
   return petList.value[activePetIndex.value] || {}
 })
+
+// 保险权益相关
+const insuranceBenefits = ref([])
+
+// 日期格式化函数
+const formatDate = (dateStr) => {
+  if (!dateStr || dateStr === '未知') return '未知' // 新增：判断dateStr是否为空
+  try {
+    const date = new Date(dateStr)
+    // 新增：判断date是否有效（避免无效日期字符串）
+    if (isNaN(date.getTime())) return '未知'
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
+  } catch (err) {
+    return '未知'
+  }
+}
+
+
+
+// 保险权益操作函数
+const handleBenefitDetail = (benefit) => {
+  if (!userInfo.value.isLogin) {
+    dialogVisible.value = true
+    return
+  }
+  router.push({
+    path: '/user/myorder?activeTab=effective',
+    query: { 
+      benefitId: benefit.benefitId, 
+      petId: currentPet.value.petId,
+      petName: currentPet.value.name
+    }
+  }).catch(err => {
+    console.error('跳转权益详情页失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  })
+}
+
+// 1. 修复 getPetPurchasedInsurance 函数
+const getPetPurchasedInsurance = async (petId) => {
+  if (!petId || !userInfo.value.isLogin) {
+    console.log('【已购保险查询】宠物ID为空或未登录，无法查询')
+    return []
+  }
+  try {
+    console.log(`【第一步】开始查询宠物${petId}的权益列表`)
+    const res = await getInsuranceBenefitListByPetId(petId)
+    console.log(`【第二步】权益接口返回结果：`, res)
+    
+    if (!res || res.code !== 200 || !Array.isArray(res.data)) {
+      console.log(`【第二步】权益接口返回非200或非数组，结果：`, res)
+      return []
+    }
+
+    const purchasedInsurance = []
+    for (const benefit of res.data) {
+      console.log(`【第三步】单条权益数据：`, benefit)
+      // 1. 解析权益表核心字段
+      const insuranceId = benefit?.insuranceId || benefit?.insurance_id;
+      const insuranceOrderId = benefit?.insuranceOrderId || benefit?.insurance_order_id; // 订单ID
+      console.log(`【第四步】解析出保险ID：${insuranceId}，订单ID：${insuranceOrderId}`)
+      
+      // 2. 查询保险名称（原有逻辑）
+      let realInsuranceName = "无";
+      if (insuranceId) {
+        try {
+          const insuranceRes = await getInsuranceDetail(insuranceId);
+          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "无";
+        } catch (e) {
+          console.error(`【查询保险${insuranceId}名称失败】`, e);
+        }
+      }
+
+      // 3. 新增：查询订单表的状态
+      let orderStatusNum = -1; // 默认-1（未查询到）
+      let orderStatusText = "未知"; // 状态中文说明
+    if (insuranceOrderId) {
+  try {
+    console.log(`【第五步】调用订单详情接口，查询订单${insuranceOrderId}状态`)
+    const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
+    console.log(`【第六步】订单${insuranceOrderId}详情返回：`, orderRes)
+    console.log(`【关键校验】orderRes.data是否存在：`, !!orderRes.data);
+    console.log(`【关键校验】orderRes.data.orderStatus的值：`, orderRes.data?.orderStatus);
+    console.log(`【关键校验】orderRes.data.orderStatus类型：`, typeof orderRes.data?.orderStatus);
+    
+    // 终极精准解析：强制转数字 + 兜底
+    const rawStatus = orderRes.data?.orderStatus;
+orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
+    console.log(`【解析后】orderStatusNum：`, orderStatusNum);
+    
+    // 转换为中文状态
+    switch (orderStatusNum) {
+      case 0:
+        orderStatusText = "已支付";
+        break;
+      case 1:
+        orderStatusText = "已生效";
+        break;
+      case 2:
+        orderStatusText = "已取消";
+        break;
+      default:
+        orderStatusText = `未知状态(${orderStatusNum})`; // 显示具体数字，方便排查
+    }
+  } catch (e) {
+    console.error(`【查询订单${insuranceOrderId}状态失败】`, e);
+    orderStatusText = "查询失败";
+  }
+} else {
+        console.log(`【第五步】订单ID为空，跳过订单状态查询`)
+      }
+
+      // 4. 组装最终数据（包含订单状态）
+      purchasedInsurance.push({
+        '宠物ID': petId,
+        '权益ID': benefit?.id || benefit?.benefitId || '无',
+        '保险ID': insuranceId || '无',
+        '保险名称(真实)': realInsuranceName,
+        '订单ID': insuranceOrderId || '无',
+        '订单状态(数字)': orderStatusNum,
+        '订单状态(中文)': orderStatusText,
+        '权益表是否有效': benefit?.isValid ? '是' : '否',
+        '创建时间': benefit?.createTime || '未知',
+        '过期时间': benefit?.insuranceExpireTime || '未知',
+        '剩余补贴': benefit?.monthlySubsidyBalance || 0,
+        '赠送服务': benefit?.freeServiceRemaining || '无'
+      });
+    }
+    // 打印最终结果（含订单状态）
+    console.log(`========== 宠物ID: ${petId} 已购保险列表 ==========`)
+    console.table(purchasedInsurance)
+    return purchasedInsurance
+  } catch (err) {
+    console.error(`【已购保险查询整体失败】宠物ID: ${petId}`, err)
+    return []
+  }
+}
+
+// 2. 修复 getPetInsuranceBenefits 函数
+const getPetInsuranceBenefits = async (petId) => {
+  if (!petId || !userInfo.value.isLogin) {
+    insuranceBenefits.value = []
+    return
+  }
+  try {
+    const res = await getInsuranceBenefitListByPetId(petId)
+    if (!res || res.code !== 200 || !Array.isArray(res.data)) {
+      insuranceBenefits.value = []
+      return
+    }
+    const benefitList = []
+    for (const benefit of res.data) {
+      // 1. 查询保险名称
+      const insuranceId = benefit?.insuranceId || benefit?.insurance_id;
+      let realInsuranceName = "宠物保障计划";
+      if (insuranceId) {
+        try {
+          const insuranceRes = await getInsuranceDetail(insuranceId);
+          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "宠物保障计划";
+        } catch (e) {
+          console.error(`查询保险${insuranceId}名称失败`, e);
+        }
+      }
+
+      // 2. 查询订单状态（修复：提前定义变量，扩大作用域）
+      let orderStatusText = "未知";
+      let orderStatusNum = -1; // 提前定义，初始值-1（未查询到）
+      const insuranceOrderId = benefit?.insuranceOrderId || benefit?.insurance_order_id;
+     if (insuranceOrderId) {
+  try {
+    const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
+    // 终极精准解析
+    const rawStatus = orderRes.data?.orderStatus;
+orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
+    switch (orderStatusNum) {
+      case 0:
+        orderStatusText = "已支付";
+        break;
+      case 1:
+        orderStatusText = "已生效";
+        break;
+      case 2:
+        orderStatusText = "已取消";
+        break;
+      default:
+        orderStatusText = `未知状态(${orderStatusNum})`;
+    }
+  } catch (e) {
+    orderStatusText = "状态查询失败";
+  }
+}
+
+      // 3. 组装页面展示数据（此时orderStatusNum已定义）
+      benefitList.push({
+        benefitId: benefit?.id || benefit?.benefitId || '',
+        insuranceName: realInsuranceName,
+        status: orderStatusText, // 页面显示订单表的中文状态
+        statusNum: orderStatusNum, // 现在能正常访问，不会报错
+        startTime: formatDate(benefit?.createTime),
+        endTime: formatDate(benefit?.insuranceExpireTime),
+        remainingSubsidy: Number(benefit?.monthlySubsidyBalance || benefit?.remainingInsuranceAmount || 0),
+        coverage: benefit?.freeServiceRemaining 
+          ? `${benefit.freeServiceRemaining}` 
+          : '宠物医疗、消费补贴等',
+        originalData: benefit || {}
+      })
+    }
+    insuranceBenefits.value = benefitList
+  } catch (err) {
+    console.error('【获取宠物保险权益失败】', err)
+    insuranceBenefits.value = []
+    ElMessage.warning('获取宠物保障信息失败，将显示默认内容')
+  }
+}
+
+const handleUseBenefit = (benefit) => {
+  if (!userInfo.value.isLogin) {
+    dialogVisible.value = true
+    return
+  }
+  router.push({
+    path: '/product-list',
+    query: { 
+      benefitId: benefit.benefitId, 
+      petId: currentPet.value.petId,
+      subsidy: benefit.remainingSubsidy
+    }
+  }).catch(err => {
+    console.error('跳转使用权益页面失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  })
+}
 
 // 清空错误提示
 const clearError = () => {
   errorMsg.value = ''
 }
 
-// 页面加载时检查登录状态+获取宠物列表
-onMounted(() => {
-  checkLoginStatus()
-})
-
 // 检查登录状态
 const checkLoginStatus = () => {
   const userData = localStorage.getItem('userData')
   if (userData) {
     const parsed = JSON.parse(userData)
-    // 重点修改：拼接正确的 user-img 路径
     const avatarUrl = parsed.avatarUrl 
       ? `${BASE_URL}/user-img/${parsed.avatarUrl.split('/').pop()}` 
       : defaultAvatar
@@ -279,31 +545,35 @@ const checkLoginStatus = () => {
       isLogin: true,
       username: parsed.username || `宝友${parsed.userId?.toString().slice(-4)}`,
       userId: parsed.userId,
-      avatarUrl: avatarUrl // 赋值拼接后的完整路径
+      avatarUrl: avatarUrl
     }
     fetchAndPrintPetList()
   }
 }
 
-// ========== 完善：获取并格式化宠物列表 ==========
+// 获取宠物列表
 const fetchAndPrintPetList = async () => {
   try {
     const res = await getPetListByUserId(userInfo.value.userId)
-    if (res.code === 200) {
-      // 格式化宠物数据（适配页面展示）
+    if (res?.code === 200 && Array.isArray(res.data)) {
       petList.value = res.data.map(pet => ({
-        name: pet.petName,
-        avatarUrl: pet.petFacePhoto || defaultPetAvatar,
-        breed: pet.petType,
-        age: calculatePetAge(pet.petBirthday), // 动态计算年龄
-        uniqueId: pet.petUniqueId || `${pet.petId}`,
-        petId: pet.petId,
-        gender: pet.petGender || '公', // 后端无性别时默认“公”
-        sterilized: pet.isSterilized
+        name: pet?.petName || '未知',
+        avatarUrl: pet?.petFacePhoto || defaultPetAvatar,
+        breed: pet?.petType || '未知',
+        age: calculatePetAge(pet?.petBirthday),
+        uniqueId: pet?.petUniqueId || `${pet?.petId || ''}`,
+        petId: pet?.petId,
+        gender: pet?.petGender || '公',
+        sterilized: pet?.isSterilized || false
       }))
       console.log(`【用户${userInfo.value.userId}的宠物列表】`, petList.value)
+      // 加载第一个宠物的权益 + 打印已购保险（主动触发，替代immediate）
+      if (petList.value.length) {
+        await getPetInsuranceBenefits(petList.value[0].petId)
+        await getPetPurchasedInsurance(petList.value[0].petId)
+      }
     } else {
-      console.log(`【获取宠物列表失败】${res.msg || '未知错误'}`)
+      console.log(`【获取宠物列表失败】${res?.msg || '未知错误'}`)
       petList.value = []
     }
   } catch (err) {
@@ -312,7 +582,7 @@ const fetchAndPrintPetList = async () => {
   }
 }
 
-// ========== 新增：计算宠物年龄 ==========
+// 计算宠物年龄
 const calculatePetAge = (birthday) => {
   if (!birthday) return '未知年龄'
   const birthDate = new Date(birthday)
@@ -326,16 +596,31 @@ const calculatePetAge = (birthday) => {
   return `${ageYear}岁${ageMonth}个月`
 }
 
-// 登录/注册提交（原有逻辑保持不变）
+// 监听宠物切换
+// 监听宠物切换
+watch(
+  () => currentPet.value.petId,
+  async (petId) => {
+    if (petId && userInfo.value.isLogin) {
+      // 等待前一个异步请求完成，避免并发导致的响应式异常
+      await getPetInsuranceBenefits(petId)
+      await getPetPurchasedInsurance(petId)
+    } else {
+      insuranceBenefits.value = []
+    }
+  }
+
+)
+
+// 登录/注册提交
 const isLoading = ref(false)
 const handleAuthSubmit = async () => {
   try {
     isLoading.value = true
     clearError()
-    let result // 直接接收后端返回的{code:200, msg:"", data:{}}
+    let result
 
     if (activeTab.value === 'login') {
-      // 直接接收响应拦截器返回的后端原始数据
       result = await login({
         email: loginForm.email,
         password: loginForm.password
@@ -348,10 +633,8 @@ const handleAuthSubmit = async () => {
       })
     }
 
-    // 核心：根据后端返回的code判断成功/失败
     if (result.code === 200) {
       if (activeTab.value === 'login') {
-        // 登录成功逻辑
         const userData = result.data
         userData.avatarUrl = userData.avatarUrl || defaultAvatar
         localStorage.setItem('userData', JSON.stringify(userData))
@@ -364,11 +647,9 @@ const handleAuthSubmit = async () => {
         registerForm.username = registerForm.email = registerForm.password = ''
       }
     } else {
-      // 后端返回业务失败（如密码错误）
       errorMsg.value = result.msg || (activeTab.value === 'login' ? '登录失败！' : '注册失败！')
     }
   } catch (error) {
-    // 这里仅捕获网络错误（如后端服务未启动）
     console.error('请求错误：', error)
     errorMsg.value = error.msg || '网络异常，请检查后端服务是否启动！'
   } finally {
@@ -376,7 +657,7 @@ const handleAuthSubmit = async () => {
   }
 }
 
-// 事件处理函数（原有逻辑保持不变）
+// 其他事件处理函数（保持不变）
 const handleAvatarClick = () => {
   if (!userInfo.value.isLogin) dialogVisible.value = true
 }
@@ -395,23 +676,18 @@ const handleEditClick = () => {
     ElMessage.error('跳转失败，请检查路由配置')
   })
 }
-
-// 编辑宠物：跳转至pet-id-card并携带petId（标识编辑模式）
 const handleEditPetClick = (petId) => {
-  // 1. 校验登录状态
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
     return
   }
-
   try {
-    // 2. 跳转至同一个路由，新增petId参数（区分添加/编辑）
     router.push({
       path: '/pet-id-card',
       query: {
-        userId: userInfo.value.userId, // 保留用户ID
-        petId: petId, // 传递要编辑的宠物ID
-        type: 'edit' // 可选：显式标识是编辑模式
+        userId: userInfo.value.userId,
+        petId: petId,
+        type: 'edit'
       }
     })
     ElMessage.success('正在前往编辑宠物信息页面')
@@ -420,7 +696,6 @@ const handleEditPetClick = (petId) => {
     ElMessage.error('页面跳转失败，请重试')
   }
 }
-
 const handleAddPetClick = () => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
@@ -434,16 +709,14 @@ const handleAddPetClick = () => {
     ElMessage.error('页面跳转失败，请重试')
   }
 }
-
 const handleOrderTabClick = (tabKey) => {
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
     return
   }
-  // 跳转到订单列表页面，并传递选中的选项卡参数
   router.push({
-    path: '/user/myorder', // 假设新订单页面的路由路径是/my-orders（需和路由配置一致）
-    query: { activeTab: tabKey } // 传递选项卡标识
+    path: '/user/myorder',
+    query: { activeTab: tabKey }
   }).catch(err => {
     console.error('跳转订单页面失败：', err)
     ElMessage.error('页面跳转失败，请重试')
@@ -454,8 +727,18 @@ const handleGuaranteeClick = () => {
     dialogVisible.value = true
     return
   }
-  ElMessage.info('查看宠物保障页面')
+  router.push({
+    path: '/guarantee',
+  }).catch(err => {
+    console.error('跳转订单页面失败：', err)
+    ElMessage.error('页面跳转失败，请重试')
+  })
 }
+
+// 页面加载
+onMounted(() => {
+  checkLoginStatus()
+})
 </script>
 
 <style scoped>
@@ -1029,5 +1312,90 @@ cursor: pointer;
 }
 .add-pet-tab:hover {
   color: #2196f3;
+}
+/* 保险权益列表样式 */
+.benefit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.benefit-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  border-left: 4px solid #2196f3;
+}
+
+.benefit-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.benefit-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.benefit-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.benefit-status.active {
+  background: #e8f5e9;
+  color: #4caf50;
+}
+
+.benefit-status.expired {
+  background: #ffebee;
+  color: #f44336;
+}
+
+.benefit-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.benefit-item {
+  display: flex;
+  font-size: 14px;
+}
+
+.benefit-item .label {
+  color: #666;
+  min-width: 80px;
+}
+
+.benefit-item .value {
+  color: #333;
+  flex: 1;
+}
+
+.benefit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mini-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.mini-btn.primary {
+  background: #2196f3;
+  color: #fff;
+}
+
+.mini-btn:hover {
+  opacity: 0.9;
 }
 </style>

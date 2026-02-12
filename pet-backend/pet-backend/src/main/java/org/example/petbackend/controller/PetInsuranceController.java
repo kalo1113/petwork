@@ -8,19 +8,29 @@ import org.example.petbackend.entity.PetInsurance;
 import org.example.petbackend.entity.PetInsuranceMediaContent;
 import org.example.petbackend.service.PetInsuranceMediaContentService;
 import org.example.petbackend.service.PetInsuranceService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
+import java.io.File;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 
-/**
- * 宠物保险控制器
- * 负责PetInsurance和PetInsuranceMediaContent两张表的CRUD操作
- */
 @RestController
 @RequestMapping("/insurance")
 public class PetInsuranceController {
+
+    private static final Logger log = LoggerFactory.getLogger(PetInsuranceController.class);
 
     @Resource
     private PetInsuranceService petInsuranceService;
@@ -28,32 +38,82 @@ public class PetInsuranceController {
     @Resource
     private PetInsuranceMediaContentService petInsuranceMediaContentService;
 
-    // ====================== 宠物保险主表操作 ======================
+    // 完全照搬宠物图片配置
+    @Value("${upload.insurance-img-path}")
+    private String insuranceImgPath;
 
-    /**
-     * 新增保险产品
-     * @param petInsurance 保险产品信息
-     * @return 新增结果
-     */
+    @Value("${upload.insurance-img-access-path:/insurance-img}")
+    private String insuranceImgAccessPath;
+
+    private final String IMG_ACCESS_PREFIX = "http://localhost:8080/insurance-img/";
+
+    // ====================== 新增保险 ======================
     @PostMapping("/add")
     public Result<?> addInsurance(@RequestBody PetInsurance petInsurance) {
-        // 基础参数校验
         if (petInsurance.getInsuranceName() == null || petInsurance.getInsuranceName().trim().isEmpty()) {
             return Result.fail("保险名称不能为空");
         }
         if (petInsurance.getDiscountPremium() == null) {
             return Result.fail("优惠保费不能为空");
         }
+        if (petInsurance.getInsuranceNo() == null || petInsurance.getInsuranceNo().trim().isEmpty()) {
+            return Result.fail("保险编号不能为空");
+        }
+        if (petInsurance.getPlanType() == null) {
+            return Result.fail("保障方案类型不能为空（1=基础版 2=升级版 3=尊享版）");
+        }
+        if (petInsurance.getPetType() == null) {
+            return Result.fail("适用宠物类型不能为空（1=猫咪 2=狗狗 3=通用）");
+        }
+        if (petInsurance.getGuaranteeCycle() == null) {
+            return Result.fail("保障周期不能为空（如12=年付）");
+        }
 
-        // 补充默认值
         if (petInsurance.getStatus() == null) {
-            petInsurance.setStatus(1); // 默认上架
+            petInsurance.setStatus(1);
         }
         if (petInsurance.getPutOnShelfTime() == null) {
-            petInsurance.setPutOnShelfTime(LocalDateTime.now()); // 默认当前时间上架
+            petInsurance.setPutOnShelfTime(LocalDateTime.now());
         }
         petInsurance.setCreateTime(LocalDateTime.now());
         petInsurance.setUpdateTime(LocalDateTime.now());
+
+        if (petInsurance.getTotalGuarantee() == null) {
+            petInsurance.setTotalGuarantee(BigDecimal.ZERO);
+        }
+        if (petInsurance.getDeductible() == null) {
+            petInsurance.setDeductible(BigDecimal.ZERO);
+        }
+        if (petInsurance.getOutpatientLimit() == null) {
+            petInsurance.setOutpatientLimit(BigDecimal.ZERO);
+        }
+        if (petInsurance.getSurgeryLimit() == null) {
+            petInsurance.setSurgeryLimit(BigDecimal.ZERO);
+        }
+
+        if (petInsurance.getInNetworkRatio() == null) {
+            petInsurance.setInNetworkRatio((byte) 80);
+        }
+        if (petInsurance.getOutNetworkRatio() == null) {
+            petInsurance.setOutNetworkRatio((byte) 50);
+        }
+
+        if (petInsurance.getWaitingPeriodAccident() == null) {
+            petInsurance.setWaitingPeriodAccident((byte) 0);
+        }
+        if (petInsurance.getWaitingPeriodDisease() == null) {
+            petInsurance.setWaitingPeriodDisease((byte) 30);
+        }
+        if (petInsurance.getWaitingPeriodCommon() == null) {
+            petInsurance.setWaitingPeriodCommon((byte) 15);
+        }
+
+        if (petInsurance.getMonthlySubsidy() == null) {
+            petInsurance.setMonthlySubsidy(BigDecimal.ZERO);
+        }
+        if (petInsurance.getGiftService() == null) {
+            petInsurance.setGiftService("无");
+        }
 
         boolean save = petInsuranceService.save(petInsurance);
         if (save) {
@@ -63,21 +123,13 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 修改保险产品
-     * @param petInsurance 保险产品信息
-     * @return 修改结果
-     */
+    // ====================== 修改保险 ======================
     @PostMapping("/update")
     public Result<?> updateInsurance(@RequestBody PetInsurance petInsurance) {
-        // 主键校验
         if (petInsurance.getId() == null) {
             return Result.fail("保险ID不能为空");
         }
-
-        // 补充更新时间
         petInsurance.setUpdateTime(LocalDateTime.now());
-
         boolean update = petInsuranceService.updateById(petInsurance);
         if (update) {
             return Result.success(null, "保险产品修改成功");
@@ -86,20 +138,13 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 删除保险产品（级联删除关联的媒体图片）
-     * @param id 保险ID
-     * @return 删除结果
-     */
+    // ====================== 删除保险 ======================
     @PostMapping("/delete/{id}")
     public Result<?> deleteInsurance(@PathVariable Integer id) {
-        // 1. 删除关联的媒体图片
         petInsuranceMediaContentService.remove(
                 Wrappers.<PetInsuranceMediaContent>lambdaQuery()
                         .eq(PetInsuranceMediaContent::getInsuranceId, id)
         );
-
-        // 2. 删除保险主表数据
         boolean remove = petInsuranceService.removeById(id);
         if (remove) {
             return Result.success(null, "保险产品及关联图片删除成功");
@@ -108,27 +153,24 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 分页查询保险产品列表
-     * @param pageNum 页码
-     * @param pageSize 每页条数
-     * @param insuranceName 保险名称（模糊查询）
-     * @param petType 适用宠物类型（1=猫咪 2=狗狗 3=通用）
-     * @param status 状态（1=上架 0=下架）
-     * @return 分页结果
-     */
+    // ====================== 分页/列表 ======================
     @GetMapping("/page")
     public Result<?> getInsurancePage(
             @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(defaultValue = "-1") Integer pageSize,
             @RequestParam(required = false) String insuranceName,
+            @RequestParam(required = false) String insuranceNo,
             @RequestParam(required = false) Byte petType,
             @RequestParam(required = false) Integer status) {
 
-        // 构建查询条件
         LambdaQueryWrapper<PetInsurance> wrapper = Wrappers.lambdaQuery();
         if (insuranceName != null && !insuranceName.trim().isEmpty()) {
-            wrapper.like(PetInsurance::getInsuranceName, insuranceName);
+            wrapper.like(PetInsurance::getInsuranceName, insuranceName)
+                    .or()
+                    .like(PetInsurance::getInsuranceNo, insuranceName);
+        }
+        if (insuranceNo != null && !insuranceNo.trim().isEmpty()) {
+            wrapper.like(PetInsurance::getInsuranceNo, insuranceNo);
         }
         if (petType != null) {
             wrapper.eq(PetInsurance::getPetType, petType);
@@ -136,37 +178,38 @@ public class PetInsuranceController {
         if (status != null) {
             wrapper.eq(PetInsurance::getStatus, status);
         }
-        // 按更新时间倒序
         wrapper.orderByDesc(PetInsurance::getUpdateTime);
 
-        // 分页查询
+        if (pageSize == -1) {
+            List<PetInsurance> list = petInsuranceService.list(wrapper);
+            return Result.success(new HashMap<String, Object>() {{
+                put("records", list);
+                put("total", list.size());
+                put("pageNum", 1);
+                put("pageSize", list.size());
+            }}, "保险产品列表查询成功");
+        }
+
         Page<PetInsurance> page = petInsuranceService.page(new Page<>(pageNum, pageSize), wrapper);
         return Result.success(page, "保险产品列表查询成功");
     }
 
-    /**
-     * 根据ID查询保险产品详情（包含关联的媒体图片）
-     * @param id 保险ID
-     * @return 保险详情+媒体图片
-     */
+    // ====================== 详情 ======================
     @GetMapping("/detail/{id}")
     public Result<?> getInsuranceDetail(@PathVariable Integer id) {
-        // 1. 查询主表信息
         PetInsurance insurance = petInsuranceService.getById(id);
         if (insurance == null) {
             return Result.fail("保险产品不存在");
         }
 
-        // 2. 查询关联的媒体图片
         List<PetInsuranceMediaContent> mediaList = petInsuranceMediaContentService.list(
                 Wrappers.<PetInsuranceMediaContent>lambdaQuery()
                         .eq(PetInsuranceMediaContent::getInsuranceId, id)
                         .orderByAsc(PetInsuranceMediaContent::getContentType)
         );
 
-        // 3. 组装返回结果
         return Result.success(
-                new java.util.HashMap<String, Object>() {{
+                new HashMap<String, Object>() {{
                     put("insurance", insurance);
                     put("mediaList", mediaList);
                 }},
@@ -174,17 +217,11 @@ public class PetInsuranceController {
         );
     }
 
-    /**
-     * 更新保险产品状态（上架/下架）
-     * @param id 保险ID
-     * @param status 状态（1=上架 0=下架）
-     * @return 更新结果
-     */
+    // ====================== 上下架 ======================
     @PostMapping("/updateStatus")
     public Result<?> updateInsuranceStatus(
             @RequestParam Integer id,
             @RequestParam Integer status) {
-
         if (status != 0 && status != 1) {
             return Result.fail("状态值只能是0（下架）或1（上架）");
         }
@@ -193,7 +230,6 @@ public class PetInsuranceController {
         insurance.setId(id);
         insurance.setStatus(status);
         insurance.setUpdateTime(LocalDateTime.now());
-        // 上架时补充上架时间
         if (status == 1 && petInsuranceService.getById(id).getPutOnShelfTime() == null) {
             insurance.setPutOnShelfTime(LocalDateTime.now());
         }
@@ -207,29 +243,28 @@ public class PetInsuranceController {
         }
     }
 
-    // ====================== 保险媒体图片操作 ======================
-
-    /**
-     * 新增保险媒体图片
-     * @param mediaContent 媒体图片信息
-     * @return 新增结果
-     */
+    // ====================== 媒体添加 ======================
     @PostMapping("/media/add")
     public Result<?> addInsuranceMedia(@RequestBody PetInsuranceMediaContent mediaContent) {
-        // 基础校验
-        if (mediaContent.getInsuranceId() == null) {
+        Integer insuranceId = null;
+        if (mediaContent.getInsuranceId() != null) {
+            insuranceId = mediaContent.getInsuranceId().intValue();
+            mediaContent.setInsuranceId(insuranceId);
+        }
+
+        if (insuranceId == null) {
             return Result.fail("关联的保险ID不能为空");
         }
         if (mediaContent.getContentType() == null) {
             return Result.fail("内容类型不能为空");
         }
-        // 图片路径或说明至少填一个（根据类型）
         if (mediaContent.getImgPath() == null && mediaContent.getImgRemark() == null) {
             return Result.fail("图片路径和图片说明不能同时为空");
         }
 
-        // 补充默认值
-        mediaContent.setCreateTime(LocalDateTime.now());
+        if (mediaContent.getCreateTime() == null) {
+            mediaContent.setCreateTime(LocalDateTime.now());
+        }
 
         boolean save = petInsuranceMediaContentService.save(mediaContent);
         if (save) {
@@ -239,17 +274,12 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 修改保险媒体图片
-     * @param mediaContent 媒体图片信息
-     * @return 修改结果
-     */
+    // ====================== 媒体修改 ======================
     @PostMapping("/media/update")
     public Result<?> updateInsuranceMedia(@RequestBody PetInsuranceMediaContent mediaContent) {
         if (mediaContent.getId() == null) {
             return Result.fail("媒体图片ID不能为空");
         }
-
         boolean update = petInsuranceMediaContentService.updateById(mediaContent);
         if (update) {
             return Result.success(null, "媒体图片修改成功");
@@ -258,11 +288,7 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 删除保险媒体图片
-     * @param id 媒体图片ID
-     * @return 删除结果
-     */
+    // ====================== 媒体删除 ======================
     @PostMapping("/media/delete/{id}")
     public Result<?> deleteInsuranceMedia(@PathVariable Integer id) {
         boolean remove = petInsuranceMediaContentService.removeById(id);
@@ -273,11 +299,7 @@ public class PetInsuranceController {
         }
     }
 
-    /**
-     * 根据保险ID查询关联的媒体图片
-     * @param insuranceId 保险ID
-     * @return 媒体图片列表
-     */
+    // ====================== 媒体列表 ======================
     @GetMapping("/media/list/{insuranceId}")
     public Result<?> getInsuranceMediaList(@PathVariable Integer insuranceId) {
         List<PetInsuranceMediaContent> mediaList = petInsuranceMediaContentService.list(
@@ -286,5 +308,171 @@ public class PetInsuranceController {
                         .orderByAsc(PetInsuranceMediaContent::getContentType)
         );
         return Result.success(mediaList, "媒体图片列表查询成功");
+    }
+
+    // ====================== ✅ 最终修复：保险图片上传（和宠物图片完全一致） ======================
+    @PostMapping("/media/upload")
+    public Result<?> uploadInsuranceMedia(
+            @RequestParam(value = "insuranceId") Object insuranceIdObj,
+            @RequestParam Integer contentType,
+            @RequestParam(required = false) String imgRemark,
+            @RequestParam MultipartFile file) {
+
+        Integer insuranceId = null;
+        try {
+            if (insuranceIdObj instanceof String) {
+                String idStr = ((String) insuranceIdObj).trim();
+                if (!idStr.matches("^\\d+$")) {
+                    return Result.fail("保险ID必须为数字");
+                }
+                insuranceId = Integer.parseInt(idStr);
+            } else if (insuranceIdObj instanceof Long) {
+                insuranceId = ((Long) insuranceIdObj).intValue();
+            } else if (insuranceIdObj instanceof Integer) {
+                insuranceId = (Integer) insuranceIdObj;
+            } else {
+                return Result.fail("保险ID类型错误，仅支持数字/数字字符串");
+            }
+        } catch (NumberFormatException e) {
+            return Result.fail("保险ID格式错误，无法转为数字：" + e.getMessage());
+        }
+
+        if (insuranceId == null || insuranceId <= 0) {
+            return Result.fail("保险ID必须为正整数");
+        }
+        if (contentType == null || contentType < 1 || contentType > 4) {
+            return Result.fail("内容类型格式错误，仅支持1-4（1=产品特色 2=理赔案例 3=保险介绍 4=推荐图）");
+        }
+        if (file.isEmpty()) {
+            return Result.fail("图片文件不能为空");
+        }
+
+        if (contentType == 4) {
+            if (imgRemark == null || imgRemark.trim().isEmpty()) {
+                return Result.fail("推荐图（contentType=4）必须填写图片说明");
+            }
+            if (imgRemark.length() > 200) {
+                return Result.fail("图片说明长度不能超过200个字符");
+            }
+            imgRemark = imgRemark.trim();
+        } else {
+            if (imgRemark == null || imgRemark.trim().isEmpty()) {
+                imgRemark = switch (contentType) {
+                    case 2 -> "理赔案例图片";
+                    case 3 -> "保险介绍图片";
+                    case 1 -> "产品特色图";
+                    default -> "其他图片";
+                };
+            } else {
+                imgRemark = imgRemark.trim();
+            }
+        }
+
+        PetInsurance insurance = petInsuranceService.getById(insuranceId);
+        if (insurance == null) {
+            return Result.fail("保险ID不存在，请先创建保险产品");
+        }
+        String insuranceNo = insurance.getInsuranceNo();
+        if (insuranceNo == null || insuranceNo.trim().isEmpty()) {
+            return Result.fail("该保险产品未配置编号（insuranceNo），无法上传图片");
+        }
+        insuranceNo = insuranceNo.trim();
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.contains(".")) {
+            return Result.fail("图片格式无效，必须包含后缀（如.jpg/.png）");
+        }
+
+        String suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
+        if (!suffix.startsWith(".")) {
+            suffix = "." + suffix;
+        }
+        if (!suffix.matches("\\.(jpg|jpeg|png|gif|webp)$")) {
+            return Result.fail("仅支持jpg/jpeg/png/gif/webp格式图片");
+        }
+
+        String typeName = switch (contentType) {
+            case 1 -> "产品特色";
+            case 2 -> "理赔案例";
+            case 3 -> "保险介绍";
+            case 4 -> "推荐图";
+            default -> "其他";
+        };
+
+        // 路径解析逻辑 —— 完全和宠物图片一样
+        File uploadDir;
+        try {
+            if (insuranceImgPath.startsWith("classpath:")) {
+                String classpathRelativePath = insuranceImgPath.replace("classpath:", "");
+                ClassPathResource resource = new ClassPathResource(classpathRelativePath);
+                String realPath = resource.getURL().getPath();
+                realPath = URLDecoder.decode(realPath, "UTF-8");
+                uploadDir = new File(realPath);
+            } else {
+                uploadDir = new File(insuranceImgPath);
+            }
+
+            if (!uploadDir.exists()) {
+                uploadDir.mkdirs();
+            }
+            if (!uploadDir.canWrite()) {
+                return Result.fail("上传失败：目录不可写");
+            }
+        } catch (Exception e) {
+            return Result.fail("上传失败：目录解析错误");
+        }
+
+        String fileName;
+        int incrementNum = 0;
+        File destFile;
+
+        do {
+            if (incrementNum == 0) {
+                fileName = insuranceNo + "_" + typeName + suffix;
+            } else {
+                fileName = insuranceNo + "_" + typeName + incrementNum + suffix;
+            }
+            destFile = new File(uploadDir, fileName);
+            incrementNum++;
+            if (incrementNum > 100) {
+                return Result.fail("同类型图片超过100张，无法上传");
+            }
+        } while (destFile.exists());
+
+        try {
+            Files.copy(file.getInputStream(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+            final Integer finalInsuranceId = insuranceId;
+            final String finalInsuranceNo = insuranceNo;
+            final String finalFileName = fileName;
+
+            PetInsuranceMediaContent mediaContent = new PetInsuranceMediaContent();
+            mediaContent.setInsuranceId(insuranceId);
+            mediaContent.setContentType(contentType);
+            mediaContent.setImgPath("/insurance-img/" + fileName);
+            mediaContent.setImgRemark(imgRemark);
+            mediaContent.setCreateTime(LocalDateTime.now());
+
+            boolean save = petInsuranceMediaContentService.save(mediaContent);
+            if (save) {
+                return Result.success(new HashMap<String, Object>() {{
+                    put("mediaId", mediaContent.getId());
+                    put("imgUrl", IMG_ACCESS_PREFIX + finalFileName);
+                    put("insuranceId", finalInsuranceId);
+                    put("insuranceNo", finalInsuranceNo);
+                    put("filePath", mediaContent.getImgPath());
+                }}, "图片上传成功");
+            } else {
+                if (destFile.exists()) destFile.delete();
+                return Result.fail("图片信息保存失败");
+            }
+        } catch (IOException e) {
+            return Result.fail("图片上传失败：" + e.getMessage());
+        }
+    }
+    @GetMapping("/test-path")
+    public String testPath() throws Exception {
+        org.springframework.core.io.Resource resource = new org.springframework.core.io.ClassPathResource("static/images/insurance-img/INS2026001_理赔案例1.png");
+        return resource.getURL().getPath();
     }
 }

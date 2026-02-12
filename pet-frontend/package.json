@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
+    "serve:user": "cross-env VUE_APP_PORT=8081 vue-cli-service serve", 
+    "serve:merchant": "cross-env VUE_APP_PORT=8082 vue-cli-service serve", 
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
     "dev": "vue-cli-service serve --open"
@@ -32,6 +34,7 @@
     "@vue/cli-plugin-router": "~5.0.0",
     "@vue/cli-service": "~5.0.0",
     "assert": "^2.1.0",
+    "cross-env": "^10.1.0",
     "eslint": "^7.32.0",
     "eslint-plugin-vue": "^8.0.3",
     "null-loader": "^4.0.1",

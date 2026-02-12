@@ -295,13 +295,6 @@
       <!-- 无地址提示 -->
       <div class="no-address" v-else>
         <span>暂无地址</span>
-        <el-button
-          type="primary"
-          size="small"
-          @click="openAddAddressDialog"
-        >
-          添加地址
-        </el-button>
       </div>
 
       <!-- 管理模式底部 -->
@@ -1020,7 +1013,7 @@ const handleLogin = async () => {
     const valid = await loginFormRef.value.validate()
     if (!valid) return
 
-    const res = await axios.post(`${BASE_URL}/user/login`, {
+    const res = await axios.post(`${BASE_URL}/user/my`, {
       email: loginForm.email,
       password: loginForm.password
     })

@@ -31,7 +31,7 @@ public class PetInsuranceMediaContent {
      * 内容类型 1=产品特色图片 2=理赔案例图片 3=产品简介 4=产品推荐图
      */
     @TableField("content_type")
-    private Byte contentType;
+    private Integer contentType;
 
     /**
      * 图片路径（产品特色图/理赔案例图）

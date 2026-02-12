@@ -486,19 +486,22 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router' // 新增：引入路由
+import { useRouter } from 'vue-router' 
 import { getProductList } from '@/api/user/index.js'
-// 引入封装的购物车接口（移除toggleCartSelect）
 import { 
   addToCart, 
   getCartList, 
   updateCartCount, 
   deleteCartItem, 
 } from '@/api/user/index.js' 
-// 新增：引入订单接口和地址接口
 import { createOrder } from '@/api/user/index.js'
 import { getDefaultReceiverAddress, getReceiverAddressList, getUserAmountInfo, deductWalletBalance } from '@/api/user/index.js'
+// 新增：引入保险权益相关接口
+import { getInsuranceBenefitListByUserId, updateMonthlySubsidyBalance } from '@/api/user/index.js'
 import { ElMessage, ElMessageBox } from 'element-plus' 
+
+const addAddressDialogVisible = ref(false) // 控制新增地址弹窗的显示/隐藏
+const isEditAddress = ref(false) // 标记当前弹窗是新增还是编辑模式
 
 // 模拟登录用户ID（实际项目中从登录态获取）
 const userId = ref('') 
@@ -534,6 +537,10 @@ const totalOldPrice = ref(0) // 选中商品的旧价总和
 const totalNowPrice = ref(0) // 选中商品的医保价总和
 const insuranceReduce = ref(0) // 医保减免的差价总和
 const selectedCount = ref(0) // 选中商品数量
+// 新增：补贴相关数据
+const subsidyAmount = ref(0) // 可抵扣的补贴金额
+const finalPayAmount = ref(0) // 最终支付金额（医保价 - 补贴）
+const userInsuranceBenefit = ref(null) // 用户有效的保险权益
 
 // ========== 修改：地址相关数据 ==========
 const defaultAddress = ref({}) // 只存储默认地址
@@ -547,7 +554,7 @@ const initUserId = () => {
     const userDataStr = localStorage.getItem('userData')
     if (!userDataStr) {
       ElMessage.warning('未检测到登录信息，请先登录')
-      router.push('/login') // 未登录跳转到登录页
+      router.push('/my') // 未登录跳转到登录页
       return
     }
     const userData = JSON.parse(userDataStr)
@@ -555,7 +562,7 @@ const initUserId = () => {
     const parsedUserId = Number(userData.userId || userData.user_id)
     if (isNaN(parsedUserId) || parsedUserId <= 0) {
       ElMessage.error('用户ID解析失败，请重新登录')
-      router.push('/login')
+      router.push('/my')
       return
     }
     userId.value = parsedUserId
@@ -563,7 +570,7 @@ const initUserId = () => {
   } catch (err) {
     ElMessage.error('用户信息解析异常，请重新登录')
     console.error('解析userData失败：', err)
-    router.push('/login')
+    router.push('/my')
   }
 }
 
@@ -581,6 +588,78 @@ const toggleCart = async () => {
     await loadCartList() // 拉取最新购物车
     cartList.value.forEach(item => item.swipeDistance = 0)
     calculateTotal()
+    // 新增：打开购物车时校验保险权益
+    await checkUserInsuranceBenefit()
+  }
+}
+
+// 新增：校验用户是否有有效保险权益
+const checkUserInsuranceBenefit = async () => {
+  try {
+    const userIdNum = Number(userId.value)
+    if (isNaN(userIdNum)) return
+    
+    console.log('🔍 开始校验用户保险权益，用户ID:', userIdNum)
+
+    // 获取用户所有保险权益（返回的是 {code, msg, data} 对象）
+    const response = await getInsuranceBenefitListByUserId(userIdNum)
+    console.log('✅ 接口返回的原始响应对象:', response)
+
+    // 1. 先判断整个响应对象是否有效
+    if (!response || !response.data || !Array.isArray(response.data)) {
+      console.log('❌ 接口返回的 data 字段为空或不是数组')
+      userInsuranceBenefit.value = null
+      subsidyAmount.value = 0
+      finalPayAmount.value = totalNowPrice.value
+      ElMessage.info('您暂无有效的宠物保险权益，无法享受月度消费补贴')
+      return
+    }
+
+    // 2. 提取真正的权益列表数组
+    const benefitList = response.data
+    console.log('🔍 提取到的权益列表数组:', benefitList)
+
+    console.log('🔍 开始筛选有效权益，原始列表长度:', benefitList.length)
+
+    // 筛选有效的保险权益（未过期、有补贴余额）
+    const validBenefits = benefitList.filter((benefit, index) => {
+      console.log(`🔍 检查第 ${index} 条权益:`, benefit)
+      
+      // 关键：兼容下划线和驼峰字段名
+      const subsidyBalance = Number(benefit.monthly_subsidy_balance || benefit.monthlySubsidyBalance || 0)
+      const insuranceStatus = benefit.insurance_status || benefit.insuranceStatus || benefit.status // 兼容不同字段名
+      const expireTime = benefit.insurance_expire_time || benefit.insuranceExpireTime // 兼容过期时间字段
+      const isExpired = new Date(expireTime) < new Date() // 判断是否过期
+
+      console.log(`  - 补贴余额: ${subsidyBalance}`)
+      console.log(`  - 保险状态: ${insuranceStatus} (2=已取消)`)
+      console.log(`  - 是否已过期: ${isExpired}`)
+
+      // 筛选条件：补贴余额>0，状态不是已取消，且未过期
+      return subsidyBalance > 0 && insuranceStatus !== 2 && !isExpired
+    })
+    
+    console.log('✅ 筛选后的有效权益列表:', validBenefits)
+
+    if (validBenefits.length === 0) {
+      console.log('❌ 没有筛选出任何有效权益')
+      userInsuranceBenefit.value = null
+      subsidyAmount.value = 0
+      finalPayAmount.value = totalNowPrice.value
+      return
+    }
+    
+    // 取第一个有效权益
+    userInsuranceBenefit.value = validBenefits[0]
+    console.log('✅ 最终选中的有效保险权益：', userInsuranceBenefit.value)
+
+    
+  } catch (err) {
+    console.error('❌ 校验保险权益失败：', err)
+    userInsuranceBenefit.value = null
+    subsidyAmount.value = 0
+    finalPayAmount.value = totalNowPrice.value
+    ElMessage.warning('校验保险权益失败，暂不享受补贴抵扣')
   }
 }
 
@@ -891,6 +970,8 @@ const addToCartHandler = async (product) => {
     
     await loadCartList();
     calculateTotal();
+    // 新增：加购后重新计算补贴
+    await checkUserInsuranceBenefit()
     ElMessage.success('已加入购物车！');
   } catch (err) {
     ElMessage.error('加购失败，请重试~');
@@ -906,6 +987,8 @@ const changeCountHandler = async (item, num) => {
   
   item.count = newCount
   calculateTotal()
+  // 新增：修改数量后重新计算补贴
+  await checkUserInsuranceBenefit()
   
   try {
     // 校验cartId有效性
@@ -919,30 +1002,91 @@ const changeCountHandler = async (item, num) => {
     // 后端失败则回滚数量
     item.count -= num
     calculateTotal()
+    // 回滚后重新计算补贴
+    await checkUserInsuranceBenefit()
     ElMessage.error('修改数量失败，请重试')
     console.error('修改数量失败：', err)
   }
 }
 
-// 计算选中商品的旧价、医保价、减免差价
+// 新增：计算补贴抵扣金额
+const calculateSubsidy = (diffTotal) => {
+ // 1. 强制转数值 + 兜底（避免 undefined/null）
+  const diffTotalNum = Number(diffTotal) || 0; // 总差价兜底
+  const totalOldPriceNum = Number(totalOldPrice.value) || 0; // 总原价兜底
+  
+  // 初始化：所有金额默认兜底为 0
+  subsidyAmount.value = 0;
+  finalPayAmount.value = totalOldPriceNum; // 默认按原价支付
+
+  if (!userInsuranceBenefit.value) {
+    // 只赋值，不弹提示
+    subsidyAmount.value = 0;
+    finalPayAmount.value = totalOldPriceNum;
+    return;
+  }
+
+  // 2. 补贴余额兜底（兼容所有字段名 + 强制转数值）
+  const remainingSubsidy = Number(
+    userInsuranceBenefit.value.monthly_subsidy_balance || 
+    userInsuranceBenefit.value.monthlySubsidyBalance || 
+    0
+  ) || 0;
+  
+  // 补贴余额≤0 → 按原价支付（已兜底）
+  if (remainingSubsidy <= 0) {
+    subsidyAmount.value = 0;
+    finalPayAmount.value = totalOldPriceNum;
+    ElMessage.info('您的月度消费补贴余额已用完，按原价结算');
+    return;
+  }
+
+  // 3. 可抵扣补贴计算（双兜底）
+  subsidyAmount.value = Math.min(diffTotalNum, remainingSubsidy);
+  // 最终支付金额（兜底 + 避免负数）
+  finalPayAmount.value = Math.max(totalOldPriceNum - subsidyAmount.value, 0);
+
+  // 日志打印（便于调试，可保留）
+  console.log(`✅ 补贴计算：
+    总原价：¥${totalOldPriceNum.toFixed(2)}
+    总差价：¥${diffTotalNum.toFixed(2)}
+    可用补贴余额：¥${remainingSubsidy.toFixed(2)}
+    实际抵扣补贴：¥${subsidyAmount.value.toFixed(2)}
+    最终支付金额：¥${finalPayAmount.value.toFixed(2)}`);
+};
+
+// ========== 修复：calculateTotal 函数（增加数值兜底） ==========
 const calculateTotal = () => {
-  let oldTotal = 0
-  let nowTotal = 0
-  let count = 0
+  let oldTotal = 0;    // 初始化为 0（兜底）
+  let nowTotal = 0;    // 初始化为 0（兜底）
+  let diffTotal = 0;   // 初始化为 0（兜底）
+  let count = 0;
+
   cartList.value.forEach(item => {
     if (item.checked) {
-      const oldPrice = Number(item.oldPrice?.replace(/[^\d.]/g, '') || 0)
-      const nowPrice = Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0)
-      oldTotal += oldPrice * item.count
-      nowTotal += nowPrice * item.count
-      count += item.count
+      // 4. 单商品价格兜底（强制转数值 + 过滤非数字）
+      const oldPrice = Number(item.oldPrice?.replace(/[^\d.]/g, '') || 0) || 0;
+      const nowPrice = Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0) || 0;
+      const itemCount = Number(item.count) || 1; // 数量兜底
+      
+      const itemDiff = oldPrice - nowPrice; // 单商品差价
+      
+      oldTotal += oldPrice * itemCount;
+      nowTotal += nowPrice * itemCount;
+      diffTotal += itemDiff * itemCount;
+      count += itemCount;
     }
-  })
-  totalOldPrice.value = oldTotal
-  totalNowPrice.value = nowTotal
-  insuranceReduce.value = oldTotal - nowTotal // 医保减免的差价
-  selectedCount.value = count
-}
+  });
+
+  // 5. 所有金额赋值时兜底（避免 NaN）
+  totalOldPrice.value = Number(oldTotal) || 0;
+  totalNowPrice.value = Number(nowTotal) || 0;
+  insuranceReduce.value = Number(diffTotal) || 0;
+  selectedCount.value = Number(count) || 0;
+
+  // 调用补贴计算（传入兜底后的总差价）
+  calculateSubsidy(diffTotal);
+};
 
 // 删除购物车商品（调用后端接口）
 const deleteCartItemHandler = async (cartId) => {
@@ -957,6 +1101,8 @@ const deleteCartItemHandler = async (cartId) => {
     // 重新拉取购物车数据
     await loadCartList()
     calculateTotal()
+    // 新增：删除后重新计算补贴
+    await checkUserInsuranceBenefit()
     ElMessage.success('已删除商品')
   } catch (err) {
     ElMessage.error('删除失败，请重试~')
@@ -964,7 +1110,7 @@ const deleteCartItemHandler = async (cartId) => {
   }
 }
 
-// 结算事件（完整版：写入数据库 + 默认地址逻辑 + 钱包余额校验 + 余额扣减）
+// 结算事件（完整版：写入数据库 + 默认地址逻辑 + 钱包余额校验 + 余额扣减 + 补贴抵扣）
 const handleCheckout = async () => {
   // 1. 基础校验：选商品
   if (selectedCount.value === 0) {
@@ -981,27 +1127,36 @@ const handleCheckout = async () => {
     const userData = localStorage.getItem('userData')
     if (!userData) {
       ElMessage.warning('请先登录后再结算')
-      router.push('/login')
+      router.push('/my')
       return
     }
     const userInfo = JSON.parse(userData)
     userIdNum = Number(userInfo.userId)
     if (isNaN(userIdNum)) {
       ElMessage.warning('用户ID异常，请重新登录')
-      router.push('/login')
+      router.push('/my')
       return
     }
   } catch (err) {
     ElMessage.warning('登录状态异常，请重新登录')
-    router.push('/login')
+    router.push('/my')
     return
   }
 
-  // ===== 步骤3.5 校验钱包余额 =====
-  let walletBalance = 0 // 保存余额，后续扣款用
-  const payAmount = Number(totalNowPrice.value) // 结算金额
+  // 校验保险权益并重新计算金额
+  await checkUserInsuranceBenefit()
+  calculateTotal() // 强制重新计算
+
+  // ===== 修正钱包余额校验（使用最终支付金额）=====
+  let walletBalance = 0
+  const payAmount = Number(finalPayAmount.value) // 修正后的最终支付金额
+
+  // 补贴提示文案修正
+  if (subsidyAmount.value > 0) {
+    ElMessage.success(`✅ 已为您抵扣月度消费补贴¥${subsidyAmount.value.toFixed(2)}（覆盖医保优惠差价）`)
+  }
+
   try {
-    // 调用获取钱包余额接口
     const amountRes = await getUserAmountInfo(userIdNum)
     if (!amountRes || amountRes.code !== 200 || !amountRes.data) {
       ElMessage.error('查询钱包余额失败，请重试')
@@ -1009,12 +1164,13 @@ const handleCheckout = async () => {
     }
     walletBalance = Number(amountRes.data.accountBalance || 0)
 
-    // 余额不足判断
-    if (walletBalance < payAmount) {
+    // 余额不足判断（使用修正后的最终支付金额）
+    if (walletBalance < payAmount && payAmount > 0) {
       try {
         await ElMessageBox.confirm(
           `您的钱包余额不足！<br/>
-          需支付¥${payAmount.toFixed(2)}，当前余额¥${walletBalance.toFixed(2)}<br/>
+          需支付¥${payAmount.toFixed(2)}（原价¥${totalOldPrice.value.toFixed(2)}，已抵扣补贴¥${subsidyAmount.value.toFixed(2)}）<br/>
+          当前余额¥${walletBalance.toFixed(2)}<br/>
           是否前往钱包充值？`,
           '余额不足',
           {
@@ -1024,11 +1180,7 @@ const handleCheckout = async () => {
             dangerouslyUseHTMLString: true
           }
         )
-        // 跳转到你的钱包页面
-        router.push({
-          path: '/user/myorder',
-          query: { activeTab: 'wallet' }
-        })
+        router.push({ path: '/user/myorder', query: { activeTab: 'wallet' } })
         return
       } catch (cancelErr) {
         ElMessage.info('已取消结算')
@@ -1041,50 +1193,78 @@ const handleCheckout = async () => {
     return
   }
 
-  // 4. 提取默认地址信息
+  // 6. 提取默认地址信息
   const receiverName = defaultAddress.value.receiverName || '测试收货人'
   const receiverPhone = defaultAddress.value.receiverPhone || '13800138000'
   const receiverAddress = defaultAddress.value.receiverProvince 
     ? `${defaultAddress.value.receiverProvince}${defaultAddress.value.receiverCity}${defaultAddress.value.receiverDistrict}${defaultAddress.value.receiverDetailAddress}`
     : '北京市朝阳区测试地址'
 
-  // 5. 二次确认
+  // 7. 二次确认（修正弹窗信息展示逻辑，匹配补贴计算规则）
   try {
-    const addressText = `收货地址：<br/>${receiverName} ${receiverPhone}<br/>${receiverAddress}`;
-    const redPrice = (price) => `<span style="color: #f56c6c; font-weight: 600;">${price}</span>`
-    await ElMessageBox.confirm(
-      `${addressText}<br/><br/>
-      确认结算${selectedCount.value}件商品？<br/>
-      原价¥${totalOldPrice.value.toFixed(2)}，医保减免：¥${insuranceReduce.value.toFixed(2)}
-      <br/>合计¥${redPrice(payAmount.toFixed(2))}<br/>
-      `,
-      '结算确认',
-      {
-        confirmButtonText: '确认结算',
-        cancelButtonText: '取消',
-        type: 'info',
-        dangerouslyUseHTMLString: true
-      }
-    )
-  } catch (error) {
-    ElMessage.info('已取消结算')
-    return
-  }
+  const addressText = `收货地址：<br/>${receiverName} ${receiverPhone}<br/>${receiverAddress}`;
+  const finalPay = payAmount; 
+  // 1. 重新获取补贴余额（和 calculateSubsidy 函数保持一致）
+  const remainingSubsidy = Number(
+    userInsuranceBenefit.value?.monthly_subsidy_balance || 
+    userInsuranceBenefit.value?.monthlySubsidyBalance || 
+    0
+  ) || 0;
+  // 2. 严格判断：有有效保险权益 + 补贴余额>0 + 实际抵扣金额>0
+  const hasValidSubsidy = !!userInsuranceBenefit.value && remainingSubsidy > 0 && Number(subsidyAmount.value) > 0;
+  const userBearDiff = Number(insuranceReduce.value) - Number(subsidyAmount.value);
+  const redPrice = (price) => `<span style="color: #f56c6c; font-weight: 600;">${Number(price).toFixed(2)}</span>`;
+    
+  await ElMessageBox.confirm(
+    `${addressText}<br/><br/>
+    确认结算${Number(selectedCount.value).toFixed(0)}件商品？<br/>
+    商品原价总计：¥${Number(totalOldPrice.value).toFixed(2)}<br/>
+    医保优惠差价总计：¥${Number(insuranceReduce.value).toFixed(2)}<br/>
+    ${hasValidSubsidy 
+      ? `月度补贴余额：¥${remainingSubsidy.toFixed(2)}<br/>
+         月度补贴为您承担差价：¥${Number(subsidyAmount.value).toFixed(2)}<br/>
+         ${userBearDiff > 0 ? `您需承担剩余差价：¥${userBearDiff.toFixed(2)}<br/>` : ''}`
+      : '<span style="color: #999;">无补贴，您需承担全部差价<br/></span>'
+    }
+    您实际需支付：${redPrice(finalPay)}<br/>
+    `,
+    '结算确认',
+    {
+      confirmButtonText: '确认结算',
+      cancelButtonText: '取消',
+      type: 'info',
+      dangerouslyUseHTMLString: true
+    }
+  );
+} catch (error) {
+  ElMessage.info('已取消结算');
+  return;
+}
 
-  // 6. 构造订单商品列表
+  // 8. 构造订单商品列表（核心修复：根据补贴状态选择原价/医保价写入数据库）
   const orderItemList = cartList.value
     .filter(item => item.checked)
-    .map(item => ({
-      productId: Number(item.productId),
-      productTitle: item.title,
-      productPrice: Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0),
-      productCount: item.count,
-      itemAmount: Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0) * item.count
-    }))
+    .map(item => {
+      // 订单价格规则：
+      // 1. 有补贴 → 按医保价（差价由补贴承担）
+      // 2. 无补贴/补贴用完 → 按原价
+      const isUseNowPrice = !!userInsuranceBenefit.value && Number(userInsuranceBenefit.value.monthlySubsidyBalance || 0) > 0
+      const orderPrice = isUseNowPrice 
+        ? Number(item.nowPrice?.replace(/[^\d.]/g, '') || 0)
+        : Number(item.oldPrice?.replace(/[^\d.]/g, '') || 0)
+      
+      return {
+        productId: Number(item.productId),
+        productTitle: item.title,
+        productPrice: orderPrice,
+        productCount: item.count,
+        itemAmount: orderPrice * item.count
+      }
+    })
 
-  // 7. 核心业务：创建订单 + 扣减钱包余额（事务级操作）
+  // 9. 核心业务：创建订单 + 扣减钱包余额 + 更新补贴余额
   try {
-    // 7.1 先创建订单
+    // 9.1 先创建订单
     const orderRes = await createOrder(
       userIdNum,
       orderItemList,
@@ -1096,17 +1276,34 @@ const handleCheckout = async () => {
       throw new Error('创建订单失败')
     }
 
-    // 7.2 关键：扣减钱包余额（调用扣款接口）
-    const deductRes = await deductWalletBalance(userIdNum, payAmount)
-    if (!deductRes || deductRes.code !== 200) {
-      // 若扣款失败，需要回滚订单（根据你的后端逻辑调整）
-      throw new Error('钱包扣款失败，订单已取消')
+    // 9.2 扣减钱包余额（仅当最终支付金额>0时）
+    if (payAmount > 0) {
+      const deductRes = await deductWalletBalance(userIdNum, payAmount)
+      if (!deductRes || deductRes.code !== 200) {
+        // 若扣款失败，需要回滚订单（根据你的后端逻辑调整）
+        throw new Error('钱包扣款失败，订单已取消')
+      }
     }
 
-    // 7.3 所有操作成功：提示 + 更新状态
-    ElMessage.success(`订单创建成功！订单ID：${orderRes.data || '未知'}，钱包已扣款¥${payAmount.toFixed(2)}`)
+    // 9.3 补贴更新逻辑（仅扣减「实际抵扣的差价」）
+    if (subsidyAmount.value > 0 && userInsuranceBenefit.value) {
+      const newSubsidyBalance = Number(userInsuranceBenefit.value.monthlySubsidyBalance || 0) - subsidyAmount.value
+      const updateRes = await updateMonthlySubsidyBalance(
+        userInsuranceBenefit.value.id, 
+        newSubsidyBalance < 0 ? 0 : newSubsidyBalance
+      )
+      if (!updateRes || updateRes.code !== 200) {
+        console.warn('补贴余额更新失败，但订单已创建')
+      }
+    }
+
+    // 修正结算成功提示
+    const successMsg = subsidyAmount.value > 0
+      ? `订单创建成功！订单ID：${orderRes.data || '未知'}，钱包已扣款¥${payAmount.toFixed(2)}（补贴抵扣差价¥${subsidyAmount.value.toFixed(2)}）`
+      : `订单创建成功！订单ID：${orderRes.data || '未知'}，钱包已扣款¥${payAmount.toFixed(2)}（无补贴抵扣，按原价结算）`
+    ElMessage.success(successMsg)
     
-    // 8. 清理购物车
+    // 10. 清理购物车
     const checkedCartIds = cartList.value
       .filter(item => item.checked)
       .map(item => item.cartId)
@@ -1121,10 +1318,13 @@ const handleCheckout = async () => {
       await loadCartList()
     }
 
-    // 9. 重置状态
+    // 11. 重置状态
     cartList.value.forEach(item => item.checked = false)
     calculateTotal()
     isCartOpen.value = false
+    // 重置补贴相关状态
+    subsidyAmount.value = 0
+    finalPayAmount.value = 0
 
   } catch (err) {
     console.error('结算失败详情：', err)
@@ -1166,11 +1366,17 @@ watch([() => cartList.value, () => cartList.value.map(i => i.checked), () => car
   calculateTotal()
 }, { deep: true })
 
-// 监听选中商品数量变化，自动加载默认地址
+// 监听选中商品数量变化，自动加载默认地址和校验保险
 watch(selectedCount, (newVal) => {
   if (newVal > 0) {
     loadDefaultAddress()
+    checkUserInsuranceBenefit()
   }
+})
+
+// 监听保险权益变化，重新计算补贴
+watch(userInsuranceBenefit, () => {
+  calculateTotal() // 权益变化时重新计算总价和补贴
 })
 
 // 页面生命周期
@@ -1182,6 +1388,7 @@ onMounted(async () => {
   if (userId.value) {
     await loadProducts()
     await loadCartList() // 此时请求的是用户4的购物车
+    await checkUserInsuranceBenefit() // 校验保险权益
   }
   
   initItemWidth()

@@ -68,6 +68,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // 4. 保险图片映射（关键：与数据库路径/insurance-img/匹配）
         log.info("保险图片映射：{} → {}", insuranceImgAccessPath + "**", insuranceImgPath);
         registry.addResourceHandler(insuranceImgAccessPath + "**")
-                .addResourceLocations(insuranceImgPath);
+                .addResourceLocations(insuranceImgPath );
+
     }
 }

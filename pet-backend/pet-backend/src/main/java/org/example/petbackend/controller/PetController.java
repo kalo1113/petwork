@@ -166,7 +166,12 @@ public class PetController {
             }
 
             // 6. 生成访问URL（使用配置的访问前缀）
-            String imgUrl = petPhotoAccessPath + "/" + newFileName;
+            String imgUrl;
+            if (petPhotoAccessPath.endsWith("/")) {
+                imgUrl = petPhotoAccessPath + newFileName;
+            } else {
+                imgUrl = petPhotoAccessPath + "/" + newFileName;
+            }
             log.info("图片上传成功，存储路径：{}，访问URL：{}", destFile.getAbsolutePath(), imgUrl);
             return Result.success(imgUrl, "图片上传成功");
         } catch (IOException e) {

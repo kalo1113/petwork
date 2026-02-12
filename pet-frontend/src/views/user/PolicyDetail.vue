@@ -6,20 +6,35 @@
         <!-- 单独返回按钮（固定在内容区左上角） -->
         <button class="back-btn" @click="handleBack">&lt;</button>
 
-        <!-- 套餐选择区域 -->
+        <!-- 套餐选择区域（仅保留3个保险的选项卡） -->
         <div class="package-section">
-          <!-- 套餐切换按钮 -->
-          <div class="tab-group">
-            <button class="tab-btn" :class="{ active: activeTab === 'basic' }" @click="activeTab = 'basic'">基础版</button>
-            <button class="tab-btn" :class="{ active: activeTab === 'advanced' }" @click="activeTab = 'advanced'">升级版</button>
-            <button class="tab-btn" :class="{ active: activeTab === 'premium' }" @click="activeTab = 'premium'">尊享版</button>
+          <!-- 仅显示基础版/升级版/尊享版的选项卡 -->
+          <div class="tab-group" v-if="isThreeInsurance">
+            <button class="tab-btn" :class="{ active: activeTab === 'basic' }" @click="handleTabClick('basic')">基础版</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'advanced' }" @click="handleTabClick('advanced')">升级版</button>
+            <button class="tab-btn" :class="{ active: activeTab === 'premium' }" @click="handleTabClick('premium')">尊享版</button>
           </div>
 
-          <!-- 套餐图片展示（根据选中的套餐切换） -->
+          <!-- 套餐图片展示（根据选中的套餐/保险切换） -->
           <div class="package-img">
-            <img v-if="activeTab === 'basic'" src="@/assets/images/保障图标/基础版.jpg" alt="基础版套餐" />
-            <img v-else-if="activeTab === 'advanced'" src="@/assets/images/保障图标/升级版.jpg" alt="升级版套餐" />
-            <img v-else src="@/assets/images/保障图标/尊享版.jpg" alt="尊享版套餐" />
+            <!-- 3个保险的图片（选项卡切换） -->
+            <img v-if="isThreeInsurance && activeTab === 'basic'" src="@/assets/images/保障图标/基础版.jpg" alt="基础版套餐" />
+            <img v-else-if="isThreeInsurance && activeTab === 'advanced'" src="@/assets/images/保障图标/升级版.jpg" alt="升级版套餐" />
+            <img v-else-if="isThreeInsurance && activeTab === 'premium'" src="@/assets/images/保障图标/尊享版.jpg" alt="尊享版套餐" />
+            <!-- 其他保险的图片（无选项卡） -->
+            <img v-else-if="insuranceDetail.mediaList && getImgByContentType(insuranceDetail.mediaList, 3)" 
+                 :src="getImageUrl(getImgByContentType(insuranceDetail.mediaList, 3))" 
+                 :alt="insuranceDetail.insuranceName || '保险套餐图'" 
+            />
+            <div v-else class="img-placeholder">暂无套餐图片</div>
+          </div>
+          
+          <!-- 新增：保险适用宠物类型提示 -->
+          <div v-if="insuranceDetail.applicablePetType" class="applicable-tip">
+            本保险适用宠物类型：<span class="type-tag">{{ getPetTypeName(insuranceDetail.applicablePetType) }}</span>
+          </div>
+          <div v-else class="applicable-tip">
+            本保险适用宠物类型：<span class="type-tag">全品类</span>
           </div>
         </div>
 
@@ -27,6 +42,10 @@
         <!-- 有宠物时显示档案（隐藏表单） -->
         <div class="pet-archive" v-if="userPetList.length > 0">
           <h3>被保宠物档案</h3>
+          <!-- 新增：宠物类型不匹配提示 -->
+          <div v-if="selectedPetId && !isPetTypeMatch" class="match-error">
+            ❌ 所选宠物类型（{{ getPetTypeName(selectedPetType) }}）与本保险适用类型（{{ getPetTypeName(insuranceDetail.applicablePetType) }}）不匹配，无法投保！
+          </div>
           <div class="pet-list">
             <!-- 已绑定的宠物 -->
             <div
@@ -34,10 +53,16 @@
               v-for="(pet) in userPetList"
               :key="pet.petId"
               @click="selectPet(pet)"
-              :class="{ active: selectedPetId === pet.petId }"
+              :class="{ 
+                active: selectedPetId === pet.petId,
+                disabled: !checkPetTypeMatch(pet.petType)
+              }"
             >
               <img :src="pet.petFacePhoto || '@/assets/images/默认宠物头像.svg'" alt="宠物头像" class="pet-avatar" />
               <span class="pet-name">{{ pet.petName }}</span>
+              <span class="pet-type-tag">{{ pet.petType }}</span>
+              <!-- 不匹配提示 -->
+              <span v-if="!checkPetTypeMatch(pet.petType)" class="unmatch-tag">不匹配</span>
             </div>
             <!-- 添加宠物按钮 -->
             <div class="pet-item add-pet" @click="showAddPetForm">
@@ -50,6 +75,10 @@
         <!-- 无宠物时显示表单（隐藏档案） -->
         <div class="pet-form" v-else>
           <h3>填写被保宠物</h3>
+          <!-- 新增：宠物类型不匹配提示 -->
+          <div v-if="petForm.petType && !checkPetTypeMatch(petForm.petType)" class="match-error">
+            ❌ 所选宠物类型（{{ getPetTypeName(petForm.petType) }}）与本保险适用类型（{{ getPetTypeName(insuranceDetail.applicablePetType) }}）不匹配，无法投保！
+          </div>
           <div class="form-group">
             <label>宠物昵称</label>
             <input type="text" placeholder="请输入" v-model="petForm.petName" />
@@ -69,15 +98,23 @@
             <div class="radio-group">
               <button
                 class="radio-btn"
-                :class="{ active: petForm.petType === '猫' }"
+                :class="{ 
+                  active: petForm.petType === '猫',
+                  disabled: !checkPetTypeMatch('猫')
+                }"
                 @click="petForm.petType = '猫'"
+                :disabled="!checkPetTypeMatch('猫')"
               >
                 猫
               </button>
               <button
                 class="radio-btn"
-                :class="{ active: petForm.petType === '狗' }"
+                :class="{ 
+                  active: petForm.petType === '狗',
+                  disabled: !checkPetTypeMatch('狗')
+                }"
                 @click="petForm.petType = '狗'"
+                :disabled="!checkPetTypeMatch('狗')"
               >
                 狗
               </button>
@@ -184,7 +221,9 @@
         <div class="payment-method">
           <h3>缴费方式</h3>
           <div class="radio-group">
-            <button class="radio-btn" :class="{ active: paymentMethod === 'monthly' }" @click="paymentMethod = 'monthly'">按月缴费(分12期)</button>
+            <button class="radio-btn" :class="{ active: paymentMethod === 'monthly' }" @click="paymentMethod = 'monthly'">
+              按月缴费(分{{ isThreeInsurance ? 12 : insuranceDetail.guaranteeCycle }}期)
+            </button>
             <button class="radio-btn" :class="{ active: paymentMethod === 'lump' }" @click="paymentMethod = 'lump'">全额缴费</button>
           </div>
           <p>每月按支付宝默认扣款顺序自动扣款</p>
@@ -205,7 +244,16 @@
         <!-- 产品特色 -->
         <div class="product-feature">
           <h3>产品特色</h3>
-          <img src="@/assets/images/保障图标/产品特色.png" alt="产品特色" />
+          <!-- 3个保险的产品特色图 -->
+          <img v-if="isThreeInsurance && activeTab === 'basic'" src="@/assets/images/保障图标/产品特色.png" alt="基础版产品特色" />
+          <img v-else-if="isThreeInsurance && activeTab === 'advanced'" src="@/assets/images/保障图标/产品特色.png" alt="升级版产品特色" />
+          <img v-else-if="isThreeInsurance && activeTab === 'premium'" src="@/assets/images/保障图标/产品特色.png" alt="尊享版产品特色" />
+          <!-- 其他保险的产品特色图 -->
+          <img v-else-if="insuranceDetail.mediaList && getImgByContentType(insuranceDetail.mediaList, 1)" 
+               :src="getImageUrl(getImgByContentType(insuranceDetail.mediaList, 1))" 
+               alt="产品特色" 
+          />
+          <div v-else class="img-placeholder">暂无产品特色图片</div>
         </div>
 
         <!-- 理赔说明 -->
@@ -217,7 +265,28 @@
         <!-- 理赔案例轮播 -->
         <div class="claim-case">
           <h3>理赔案例</h3>
+          <!-- 3个保险的理赔案例 -->
           <el-carousel
+            v-if="isThreeInsurance"
+            v-model="currentCase"
+            indicator-position="outside"
+            height="2100px"
+            :autoplay="true"
+          >
+            <el-carousel-item
+              v-for="(img, index) in threeCaseImages"
+              :key="index"
+            >
+              <img
+                :src="img"
+                style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;"
+                alt="理赔案例"
+              />
+            </el-carousel-item>
+          </el-carousel>
+          <!-- 其他保险的理赔案例 -->
+          <el-carousel
+            v-else-if="caseImages.length > 0"
             v-model="currentCase"
             indicator-position="outside"
             height="2100px"
@@ -228,23 +297,24 @@
               :key="index"
             >
               <img
-                :src="img"
+                :src="getImageUrl(img)"
                 style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;"
                 alt="理赔案例"
               />
             </el-carousel-item>
           </el-carousel>
+          <div v-else class="img-placeholder">暂无理赔案例图片</div>
         </div>
 
         <!-- 底部投保栏 -->
         <div class="bottom-bar">
           <button class="consult-btn">咨询</button>
           <button class="add-btn" @click="showAddPetForm">+</button>
-          <p>{{ getPriceText() }}</p>
+          <p>{{ priceText }}</p>
           <button
             class="insure-btn"
-            @click="completePetInfo"
-            :disabled="!canSubmit || isSubmitting"
+            @click="submitInsuranceOrder"
+            :disabled="!canSubmit || isSubmitting || !isPetTypeValid || !insuranceLoaded"
           >
             <span v-if="!isSubmitting">我要投保</span>
             <span v-else>提交中...</span>
@@ -253,7 +323,7 @@
       </div>
     </div>
 
-    <!-- 登录弹窗（如需显示登录提示可补充） -->
+    <!-- 登录弹窗 -->
     <el-dialog v-model="dialogVisible" title="请先登录" width="30%">
       <p>您需要先登录才能添加宠物哦！</p>
       <template #footer>
@@ -268,39 +338,61 @@
 // 导入核心依赖
 import { reactive, ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-// 导入api方法（新增：获取用户宠物列表）
-import { addPet, uploadPetImg, updatePetPhoto, getPetListByUserId } from '@/api/user/index.js'
+// 导入全局配置
+import { getImageUrl } from '@/config/index.js'
+// 导入api方法
+import { 
+  addPet, uploadPetImg, updatePetPhoto, getPetListByUserId, 
+  getInsuranceMediaList, getInsuranceDetail, createInsuranceOrder 
+} from '@/api/user/index.js'
 
 // 导入Element Plus组件
 import { ElDatePicker, ElCarousel, ElCarouselItem, ElMessage, ElDialog, ElButton } from 'element-plus'
-// 导入理赔案例图片
+// 导入3个保险的理赔案例图片
 import case1 from '@/assets/images/保障图标/投保案例1.jpg'
 import case2 from '@/assets/images/保障图标/投保案例2.jpg'
 import case3 from '@/assets/images/保障图标/投保案例3.jpg'
+const currentCase = ref(0)
+// ========== 核心：区分3个保险和其他保险 ==========
+const threeInsuranceMap = {
+  1: 'basic',   // 保险ID=1 → 基础版
+  2: 'advanced',// 保险ID=2 → 升级版
+  3: 'premium'  // 保险ID=3 → 尊享版
+}
+const isThreeInsurance = ref(false) // 是否是3个带选项卡的保险
+const activeTab = ref('premium')    // 3个保险的选中选项卡
+const threeCaseImages = ref([case1, case2, case3]) // 3个保险的固定理赔案例
 
-// ========== 新增：用户登录状态相关 ==========
-const userInfo = ref({
-  isLogin: false, // 示例：默认未登录，需替换为真实登录状态
-  userId: ''
+// ========== 保险相关状态 ==========
+const insuranceDetail = ref({
+  mediaList: [],
+  discountPremium: 0,
+  guaranteeCycle: 12,
+  insuranceName: '',
+  id: '',
+  applicablePetType: ''
 })
-const dialogVisible = ref(false) // 登录弹窗显示状态
+const caseImages = ref([])
+const paymentMethod = ref('monthly')
+const selectedPetType = ref('')
+const insuranceLoaded = ref(false)
 
-// ========== 复用核心逻辑 ==========
-// 路由实例
+// ========== 用户&路由状态 ==========
+const userInfo = ref({ isLogin: false, userId: '' })
+const dialogVisible = ref(false)
 const router = useRouter()
 const route = useRoute()
 
-// 状态管理
+// ========== 提交&表单状态 ==========
 const isSubmitting = ref(false)
-const isAgreed = ref(false) // 协议勾选状态（移至缴费区后仍复用）
-const userPetList = ref([]) // 用户已绑定的宠物列表
-const selectedPetId = ref('') // 当前选中的宠物ID
+const submitLock = ref(false)
+const isAgreed = ref(false)
+const userPetList = ref([])
+const selectedPetId = ref('')
 
-// 文件Ref
+// 文件上传状态
 const faceFileRef = ref(null)
 const bodyFileRef = ref(null)
-
-// 前端缓存：图片文件 + 预览URL
 const cacheFiles = ref({ face: null, body: null })
 const previewUrls = ref({ face: '', body: '' })
 
@@ -316,151 +408,242 @@ const petForm = reactive({
   petBodyPhoto: ''
 })
 
-// 套餐切换
-const activeTab = ref('premium')
-const packagePrice = {
+// ========== 3个保险的固定价格 ==========
+const threePackagePrice = {
   basic: 18.00,
   advanced: 38.00,
   premium: 68.00
 }
-const paymentMethod = ref('monthly')
 
-// 理赔案例轮播
-const caseImages = ref([case1, case2, case3])
-const currentCase = ref(0)
+// ========== 方法：根据contentType获取图片 ==========
+const getImgByContentType = (mediaList, type) => {
+  if (!mediaList || !Array.isArray(mediaList)) return ''
+  const item = mediaList.find(item => item.contentType === type)
+  return item ? item.imgPath : ''
+}
 
-// ========== 新增：添加宠物按钮逻辑 ==========
+// ========== 价格计算（修复版：兼容3个保险和其他保险） ==========
+const priceText = computed(() => {
+  // 3个保险的固定价格计算
+  if (isThreeInsurance.value) {
+    const singleMonthPrice = threePackagePrice[activeTab.value] // 单月价格
+    const totalPrice = singleMonthPrice * 12 // 全年总价（全额）
+    return paymentMethod.value === 'monthly' 
+      ? `${singleMonthPrice.toFixed(2)}元/月起` 
+      : `总计${totalPrice.toFixed(2)}元`
+  }
+  
+  // 其他保险的动态价格计算
+  const discountPremium = Number(insuranceDetail.value.discountPremium) || 0 // 总优惠价（全额）
+  const guaranteeCycle = Number(insuranceDetail.value.guaranteeCycle) || 12 // 保障周期（月）
+  
+  if (discountPremium <= 0) return '0.00元/月起'
+  
+  // 基础单月价格 = 总优惠价 / 保障周期
+  const baseMonthlyPrice = discountPremium / guaranteeCycle
+  // 按月缴费需加1.6%手续费（其他保险）
+  const monthlyPriceWithFee = baseMonthlyPrice * 1.016
+  
+  return paymentMethod.value === 'monthly' 
+    ? `${monthlyPriceWithFee.toFixed(2)}元/月起` 
+    : `总计${discountPremium.toFixed(2)}元`
+})
+
+// ========== 宠物类型匹配校验（修复重复键名问题） ==========
+const petTypeCodeMap = { '1': '猫', '2': '狗', '3': '通用' } // 统一字符串键，避免ESLint报错
+const checkPetTypeMatch = (petType) => {
+  if (!insuranceDetail.value.applicablePetType) return true
+  if (insuranceDetail.value.applicablePetType === '通用') return true
+  // 统一转为字符串后匹配，兼容数字/字符串类型
+  const petTypeStr = typeof petType === 'number' ? String(petType) : petType
+  const targetType = petTypeCodeMap[petTypeStr] || petTypeStr
+  return insuranceDetail.value.applicablePetType === targetType
+}
+const isPetTypeMatch = computed(() => {
+  if (selectedPetId.value) return checkPetTypeMatch(selectedPetType.value)
+  return petForm.petType ? checkPetTypeMatch(petForm.petType) : true
+})
+const isPetTypeValid = computed(() => {
+  if (selectedPetId.value === '' && !petForm.petType) return true
+  return isPetTypeMatch.value
+})
+const getPetTypeName = (type) => {
+  // 仅保留字符串键，避免重复
+  const map = { 
+    '猫': '猫', 
+    '狗': '狗', 
+    '通用': '猫/狗通用', 
+    '1': '猫', 
+    '2': '狗', 
+    '3': '猫/狗通用', 
+    '': '未设置' 
+  }
+  return map[String(type)] || '未设置' // 统一转字符串，避免类型不匹配
+}
+
+// ========== 3个保险的选项卡切换 ==========
+const handleTabClick = (tab) => {
+  activeTab.value = tab
+  // 同步切换保险ID（对应threeInsuranceMap）
+  const insuranceId = Object.keys(threeInsuranceMap).find(key => threeInsuranceMap[key] === tab)
+  if (insuranceId) {
+    insuranceDetail.value.id = insuranceId
+    // 重新加载对应保险的媒体数据（如果需要）
+    getInsuranceMediaList(insuranceId).then(res => {
+      if (res.code === 200) insuranceDetail.value.mediaList = res.data
+    })
+  }
+}
+
+// ========== 页面初始化（区分3个保险和其他保险 + 调试日志） ==========
+onMounted(async () => {
+  // 1. 获取用户状态
+  const loginData = JSON.parse(localStorage.getItem('userData') || '{}')
+  userInfo.value = { isLogin: !!loginData.userId, userId: loginData.userId || '' }
+  const userId = userInfo.value.userId || route.query.userId
+  console.log('【调试】当前用户ID：', userId) // 调试日志：确认用户ID
+  if (!userId) {
+    ElMessage.warning('请先登录后再投保！')
+    return
+  }
+  petForm.userId = String(userId)
+
+  // 2. 获取保险ID
+  const insuranceId = route.query.id
+  console.log('【调试】当前保险ID：', insuranceId) // 调试日志：确认保险ID
+  if (!insuranceId) {
+    ElMessage.warning('未获取到保险产品信息！')
+    return
+  }
+  insuranceDetail.value.id = insuranceId
+
+  // 3. 判断是否是3个带选项卡的保险
+  isThreeInsurance.value = Object.keys(threeInsuranceMap).includes(insuranceId)
+  if (isThreeInsurance.value) {
+    // 3个保险：初始化选项卡
+    activeTab.value = threeInsuranceMap[insuranceId]
+    insuranceLoaded.value = true
+    await fetchUserPetList(userId)
+    return
+  }
+
+  // 4. 其他保险：加载详情
+  try {
+    const detailRes = await getInsuranceDetail(insuranceId)
+    console.log('【调试】保险详情返回：', detailRes) // 调试日志：确认保险详情
+    if (detailRes.code === 200) {
+      insuranceDetail.value = {
+        mediaList: [],
+        discountPremium: 0,
+        guaranteeCycle: 12,
+        insuranceName: '',
+        id: insuranceId,
+        applicablePetType: '',
+        ...detailRes.data
+      }
+      insuranceDetail.value.discountPremium = Number(detailRes.data.insurance?.discountPremium || 0)
+      insuranceDetail.value.guaranteeCycle = Number(detailRes.data.insurance?.guaranteeCycle || 12)
+      insuranceDetail.value.insuranceName = detailRes.data.insurance?.insuranceName || ''
+      insuranceDetail.value.applicablePetType = petTypeCodeMap[detailRes.data.insurance?.petType] || ''
+    }
+
+    // 加载媒体列表
+    const mediaRes = await getInsuranceMediaList(insuranceId)
+    if (mediaRes.code === 200) {
+      insuranceDetail.value.mediaList = mediaRes.data
+      caseImages.value = mediaRes.data.filter(item => item.contentType === 2).map(item => item.imgPath)
+    }
+
+    // 加载宠物列表
+    await fetchUserPetList(userId)
+    insuranceLoaded.value = true
+  } catch (err) {
+    console.error('页面初始化失败：', err)
+    ElMessage.error('页面初始化失败，请重试')
+  }
+})
+
+// ========== 原有方法（兼容3个保险） ==========
+const fetchUserPetList = async (userId) => {
+  try {
+    const res = await getPetListByUserId(userId)
+    console.log('【调试】宠物列表返回：', res) // 调试日志：确认宠物列表
+    if (res.code === 200) {
+      userPetList.value = res.data
+      if (userPetList.value.length > 0) selectPet(userPetList.value[0])
+    }
+  } catch (err) {
+    console.error('获取宠物列表失败：', err)
+    userPetList.value = []
+  }
+}
+const selectPet = (pet) => {
+  selectedPetId.value = pet.petId
+  selectedPetType.value = pet.petType
+  Object.assign(petForm, {
+    petName: pet.petName,
+    petBirthday: pet.petBirthday,
+    petType: pet.petType,
+    petGender: pet.petGender,
+    isSterilized: pet.isSterilized,
+    petFacePhoto: pet.petFacePhoto,
+    petBodyPhoto: pet.petBodyPhoto
+  })
+  previewUrls.value = { face: pet.petFacePhoto, body: pet.petBodyPhoto }
+}
 const showAddPetForm = () => {
-  // 1. 校验登录状态
   if (!userInfo.value.isLogin) {
     dialogVisible.value = true
     return
   }
-  // 2. 登录状态下跳转添加宠物页面
   try {
+    const disabledPetTypes = insuranceDetail.value.applicablePetType === '猫' ? ['狗'] : 
+                            insuranceDetail.value.applicablePetType === '狗' ? ['猫'] : []
     router.push({
       path: '/pet-id-card',
-      query: { userId: userInfo.value.userId }
+      query: { userId: userInfo.value.userId, requiredPetType: insuranceDetail.value.applicablePetType, disabledPetTypes: JSON.stringify(disabledPetTypes) }
     })
     ElMessage.success('正在前往添加宠物页面')
   } catch (err) {
-    console.error('路由跳转失败：', err)
     ElMessage.error('页面跳转失败，请重试')
   }
 }
-
-// 跳转登录页（弹窗回调）
 const toLogin = () => {
   dialogVisible.value = false
-  router.push('/login')
+  router.push('/my')
 }
-
-// ========== 表单校验（适配协议勾选移至缴费区） ==========
 const canSubmit = computed(() => {
-  // 基础校验：协议勾选 + 非提交中
-  const baseValid = isAgreed.value && !isSubmitting.value
+  const baseValid = isAgreed.value && !isSubmitting.value && isPetTypeValid.value
   if (!baseValid) return false
-
-  // 已选中宠物：仅需协议勾选
-  if (selectedPetId.value) {
-    return true
-  }
-
-  // 未选中宠物：需完整表单校验
+  if (selectedPetId.value) return true
   const basicValid = !!petForm.userId && !!petForm.petName && !!petForm.petType &&
                     !!petForm.petGender && !!petForm.petBirthday && !!petForm.isSterilized
   const photoValid = !!cacheFiles.value.face && !!cacheFiles.value.body
   return basicValid && photoValid
 })
-
-// ========== 页面挂载逻辑 ==========
-onMounted(async () => {
-  // 1. 获取真实用户登录状态（示例：需替换为项目真实登录逻辑）
-  const loginData = JSON.parse(localStorage.getItem('userData') || '{}')
-  userInfo.value = {
-    isLogin: !!loginData.userId,
-    userId: loginData.userId || ''
-  }
-
-  const userId = userInfo.value.userId || route.query.userId
-  // 2. 无有效ID时提示登录
-  if (!userId) {
-    ElMessage.warning('请先登录后再投保！')
-    return
-  }
-
-  // 3. 赋值用户ID并获取宠物列表
-  petForm.userId = String(userId)
-  await fetchUserPetList(userId)
-  console.log('投保页面获取到的真实userId：', petForm.userId)
-})
-
-// ========== 宠物列表相关逻辑 ==========
-const fetchUserPetList = async (userId) => {
-  try {
-    const res = await getPetListByUserId(userId)
-    if (res.code === 200) {
-      userPetList.value = res.data
-      // 若有宠物，默认选中第一个
-      if (userPetList.value.length > 0) {
-        selectPet(userPetList.value[0])
-      }
-    }
-  } catch (err) {
-    console.error('获取用户宠物列表失败：', err)
-    userPetList.value = []
-  }
-}
-
-const selectPet = (pet) => {
-  selectedPetId.value = pet.petId
-  // 回显宠物信息
-  petForm.petName = pet.petName
-  petForm.petBirthday = pet.petBirthday
-  petForm.petType = pet.petType
-  petForm.petGender = pet.petGender
-  petForm.isSterilized = pet.isSterilized
-  petForm.petFacePhoto = pet.petFacePhoto
-  petForm.petBodyPhoto = pet.petBodyPhoto
-  // 预览图回显
-  previewUrls.value.face = pet.petFacePhoto
-  previewUrls.value.body = pet.petBodyPhoto
-}
-
-// ========== 文件上传相关逻辑 ==========
 const handleFileChange = (e, type) => {
   const file = e.target.files[0]
   if (!file) return
-  // 图片类型校验
-  const fileType = file.type
-  const allowTypes = [
-    'image/jpg', 'image/jpeg', 'image/png', 'image/gif',
-    'image/pjpeg', 'image/x-png'
-  ]
-  if (!allowTypes.includes(fileType)) {
+  const allowTypes = ['image/jpg', 'image/jpeg', 'image/png', 'image/gif', 'image/pjpeg', 'image/x-png']
+  if (!allowTypes.includes(file.type)) {
     ElMessage.error('只能上传jpg、jpeg、png、gif格式图片！')
     return
   }
-  // 图片大小校验
   if (file.size > 5 * 1024 * 1024) {
     ElMessage.error('图片大小不能超过5MB！')
     return
   }
-  // 缓存文件 + 生成预览URL
   cacheFiles.value[type] = file
   previewUrls.value[type] = URL.createObjectURL(file)
   e.target.value = ''
 }
-
 const triggerFileInput = (type) => {
   type === 'face' ? faceFileRef.value.click() : bodyFileRef.value.click()
 }
-
 const handleDelete = (type) => {
   previewUrls.value[type] = ''
   cacheFiles.value[type] = null
 }
-
 const uploadPhoto = async (file, petIdVal, photoType) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -475,14 +658,37 @@ const uploadPhoto = async (file, petIdVal, photoType) => {
   })
 }
 
-// ========== 提交投保逻辑 ==========
-const completePetInfo = async () => {
+// ========== 提交投保（核心修复：返回值判断 + 错误处理 + 调试日志） ==========
+// ========== 提交投保（新增创建权益逻辑） ==========
+const submitInsuranceOrder = async () => {
+  if (isSubmitting.value || submitLock.value) {
+    ElMessage.warning('正在提交中，请稍候...')
+    return
+  }
+  if (!isPetTypeValid.value) {
+    ElMessage.error('宠物类型与本保险适用类型不匹配，无法投保！')
+    return
+  }
+  if (!insuranceDetail.value.id) {
+    ElMessage.error('未获取到保险产品信息，无法投保！')
+    return
+  }
+  if (!petForm.userId) {
+    ElMessage.error('用户信息异常，请重新登录！')
+    return
+  }
+
   isSubmitting.value = true
+  submitLock.value = true
+
   try {
     let petIdVal = selectedPetId.value
 
-    // 新增宠物场景
+    // 新增宠物（原有逻辑不变）
     if (!petIdVal) {
+      if (!petForm.petName || !petForm.petType || !petForm.petBirthday) {
+        throw new Error('请填写完整的宠物信息！')
+      }
       const addRes = await addPet({
         userId: petForm.userId,
         petName: petForm.petName,
@@ -491,38 +697,78 @@ const completePetInfo = async () => {
         petGender: petForm.petGender,
         isSterilized: petForm.isSterilized
       })
-      if (addRes.code !== 200) throw new Error(`创建宠物失败：${addRes.msg}`)
-      petIdVal = addRes.data.petId
+      console.log('【调试】新增宠物返回：', addRes)
+      if (!addRes || (addRes.code !== undefined && addRes.code !== 200)) {
+        throw new Error(`创建宠物失败：${addRes?.msg || '未知错误'}`)
+      }
+      petIdVal = addRes.data?.petId || addRes.petId
+      if (!petIdVal) throw new Error('创建宠物成功，但未返回宠物ID')
       ElMessage.success(`宠物ID生成成功：${petIdVal}`)
 
-      // 上传照片
+      // 上传照片（原有逻辑不变）
       if (cacheFiles.value.face) {
         const faceRes = await uploadPhoto(cacheFiles.value.face, petIdVal, 'face')
-        if (faceRes.code !== 200) throw new Error(`正脸照上传失败：${faceRes.msg}`)
+        if (faceRes?.code !== 200) throw new Error(`正脸照上传失败：${faceRes?.msg || '未知错误'}`)
         await updatePetPhoto({ petId: petIdVal, photoType: 'face', imgUrl: faceRes.data })
       }
       if (cacheFiles.value.body) {
         const bodyRes = await uploadPhoto(cacheFiles.value.body, petIdVal, 'body')
-        if (bodyRes.code !== 200) throw new Error(`全身照上传失败：${bodyRes.msg}`)
+        if (bodyRes?.code !== 200) throw new Error(`全身照上传失败：${bodyRes?.msg || '未知错误'}`)
         await updatePetPhoto({ petId: petIdVal, photoType: 'body', imgUrl: bodyRes.data })
       }
 
-      // 刷新宠物列表
       await fetchUserPetList(petForm.userId)
     }
 
-    // 投保成功提示
-    ElMessage.success(selectedPetId.value ? '投保成功！' : `宠物身份证创建完成并投保成功！ID：${petIdVal}`)
-    setTimeout(() => {
-      router.go(-1)
-    }, 1500)
+    // 构建订单数据（原有逻辑不变）
+    const orderData = {
+      userId: Number(petForm.userId) || 0,
+      petId: Number(petIdVal) || 0,
+      insuranceId: Number(insuranceDetail.value.id) || 0,
+      insuranceName: isThreeInsurance.value 
+        ? { basic: '基础版宠物保障', advanced: '升级版宠物保障', premium: '尊享版宠物保障' }[activeTab.value]
+        : insuranceDetail.value.insuranceName || '未知保险',
+      paymentMethod: paymentMethod.value || 'lump',
+      discountPremium: isThreeInsurance.value 
+        ? threePackagePrice[activeTab.value] * 12 
+        : Number(insuranceDetail.value.discountPremium) || 0,
+      guaranteeCycle: isThreeInsurance.value ? 12 : Number(insuranceDetail.value.guaranteeCycle) || 12,
+      monthlyPrice: isThreeInsurance.value 
+        ? threePackagePrice[activeTab.value] 
+        : (Number(insuranceDetail.value.discountPremium) || 0) / (Number(insuranceDetail.value.guaranteeCycle) || 12) * (paymentMethod.value === 'monthly' ? 1.016 : 1),
+      totalAmount: isThreeInsurance.value 
+        ? (paymentMethod.value === 'monthly' ? threePackagePrice[activeTab.value] : threePackagePrice[activeTab.value] * 12)
+        : (paymentMethod.value === 'monthly' 
+          ? ((Number(insuranceDetail.value.discountPremium) || 0) / (Number(insuranceDetail.value.guaranteeCycle) || 12)) * 1.016 
+          : Number(insuranceDetail.value.discountPremium) || 0),
+      orderStatus: 0,
+      remark: `投保-${isThreeInsurance.value ? 
+        { basic: '基础版', advanced: '升级版', premium: '尊享版' }[activeTab.value] : 
+        insuranceDetail.value.insuranceName}-${petForm.petName || '未知宠物'}`,
+      requestId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    }
+
+    // 调用创建订单接口（原有逻辑不变）
+    console.log('【调试】提交订单数据：', orderData)
+    const orderRes = await createInsuranceOrder(orderData)
+    console.log('【调试】订单接口返回：', orderRes)
+
+    // 核心修改：删除重复创建权益的逻辑（后端已自动创建）
+    if (orderRes && orderRes.code === 200) {
+      // 提示成功并跳转
+      ElMessage.success('投保成功！权益已同步创建');
+      setTimeout(() => {
+        router.push({ path: '/user/myorder', query: { userId: petForm.userId } });
+      }, 1500);
+    } else {
+      throw new Error(`创建订单失败：${orderRes?.msg || '后端未返回错误信息'}`);
+    }
   } catch (err) {
-    console.error('===== 投保失败 =====', err)
-    ElMessage.error(err.message || '提交失败，请重试')
+    console.error('创建保险订单/权益失败：', err);
+    ElMessage.error(err.message || '创建保险订单失败，请重试');
   } finally {
-    isSubmitting.value = false
-    cacheFiles.value = { face: null, body: null }
-    previewUrls.value = { face: '', body: '' }
+    isSubmitting.value = false;
+    submitLock.value = false;
   }
 }
 
@@ -534,23 +780,12 @@ const handleBack = () => {
     router.go(-1)
   }
 }
-
-// 价格计算
-const getPriceText = () => {
-  const price = packagePrice[activeTab.value]
-  return paymentMethod.value === 'monthly' ? `${price.toFixed(2)}元/月起` : `总计${(price * 12).toFixed(2)}元`
-}
 </script>
 
 <style scoped>
 /* 基础样式 */
-.claim-case .el-carousel {
-  width: 100%;
-}
-.page-container {
-  max-width: 1200px;
-  margin: 0 auto;
-}
+.claim-case .el-carousel { width: 100%; }
+.page-container { max-width: 1200px; margin: 0 auto; }
 .pet-insurance-page {
   background-image: url("@/assets/images/保障图标/保险详情页顶部.png");
   background-size: contain;
@@ -608,9 +843,7 @@ const getPriceText = () => {
   font-weight: 500;
   transition: all 0.3s ease;
 }
-.tab-btn:hover {
-  background-color: #e9f2fa;
-}
+.tab-btn:hover { background-color: #e9f2fa; }
 .tab-btn.active {
   background-color: #2196f3;
   color: #fff;
@@ -622,6 +855,23 @@ const getPriceText = () => {
   border-radius: 8px;
   margin-bottom: 16px;
 }
+.applicable-tip {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #666;
+}
+.type-tag { color: #2196f3; font-weight: bold; }
+.img-placeholder {
+  width: 100%;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  color: #999;
+  font-size: 16px;
+}
 
 /* 被保宠物档案样式 */
 .pet-archive {
@@ -631,6 +881,14 @@ const getPriceText = () => {
   margin: 20px auto;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
+.match-error {
+  color: #ff4949;
+  font-size: 14px;
+  margin-bottom: 15px;
+  padding: 8px;
+  background-color: #fff2f2;
+  border-radius: 4px;
+}
 .pet-archive h3 {
   font-size: 20px;
   margin-bottom: 15px;
@@ -638,21 +896,17 @@ const getPriceText = () => {
   border-bottom: 2px solid #2196f3;
   padding-bottom: 8px;
 }
-.pet-list {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
+.pet-list { display: flex; gap: 20px; flex-wrap: wrap; }
 .pet-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 80px;
   cursor: pointer;
+  position: relative;
 }
-.pet-item.active {
-  color: #2196f3;
-}
+.pet-item.disabled { opacity: 0.6; cursor: not-allowed; }
+.pet-item.active { color: #2196f3; }
 .pet-avatar {
   width: 60px;
   height: 60px;
@@ -661,12 +915,19 @@ const getPriceText = () => {
   margin-bottom: 8px;
   border: 2px solid transparent;
 }
-.pet-item.active .pet-avatar {
-  border-color: #2196f3;
-}
-.pet-name {
-  font-size: 14px;
-  text-align: center;
+.pet-item.active .pet-avatar { border-color: #2196f3; }
+.pet-name { font-size: 14px; text-align: center; }
+.pet-type-tag { font-size: 12px; color: #999; margin-top: 4px; }
+.unmatch-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 10px;
+  color: #fff;
+  background-color: #ff4949;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-weight: bold;
 }
 .add-pet .plus-icon {
   font-size: 24px;
@@ -689,9 +950,7 @@ const getPriceText = () => {
   border-bottom: 2px solid #2196f3;
   padding-bottom: 8px;
 }
-.form-group {
-  margin-bottom: 20px;
-}
+.form-group { margin-bottom: 20px; }
 .form-group label {
   display: block;
   margin-bottom: 8px;
@@ -712,11 +971,7 @@ const getPriceText = () => {
   outline: none;
   box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 }
-.radio-group {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
+.radio-group { display: flex; gap: 12px; flex-wrap: wrap; }
 .radio-btn {
   padding: 8px 16px;
   border: 1px solid #ddd;
@@ -726,18 +981,14 @@ const getPriceText = () => {
   cursor: pointer;
   transition: all 0.3s ease;
 }
-.radio-btn:hover {
-  background-color: #e9f2fa;
-}
+.radio-btn.disabled { opacity: 0.6; cursor: not-allowed; background-color: #f9f9f9; }
+.radio-btn:hover:not(.disabled) { background-color: #e9f2fa; }
 .radio-btn.active {
   background-color: #2196f3;
   color: #fff;
   border-color: #2196f3;
 }
-.photo-upload-group {
-  display: flex;
-  gap: 20px;
-}
+.photo-upload-group { display: flex; gap: 20px; }
 .photo-upload {
   width: 120px;
   height: 120px;
@@ -754,11 +1005,7 @@ const getPriceText = () => {
   align-items: center;
   justify-content: center;
 }
-.preview-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.preview-img { width: 100%; height: 100%; object-fit: cover; }
 .upload-placeholder {
   display: flex;
   flex-direction: column;
@@ -797,17 +1044,10 @@ const getPriceText = () => {
   font-size: 14px;
   font-weight: bold;
 }
-.delete-btn:hover {
-  background-color: #ff4949;
-  color: #fff;
-}
-.tip {
-  color: #999;
-  font-size: 14px;
-  margin-top: 8px;
-}
+.delete-btn:hover { background-color: #ff4949; color: #fff; }
+.tip { color: #999; font-size: 14px; margin-top: 8px; }
 
-/* 缴费方式样式（包含协议勾选） */
+/* 缴费方式样式 */
 .payment-method {
   background-color: #fff;
   border-radius: 12px;
@@ -822,11 +1062,7 @@ const getPriceText = () => {
   border-bottom: 2px solid #2196f3;
   padding-bottom: 8px;
 }
-.warning {
-  color: #f57c00;
-  font-weight: 500;
-}
-/* 协议勾选样式（移至缴费区后） */
+.warning { color: #f57c00; font-weight: 500; }
 .agree-group {
   margin-top: 20px;
   padding-top: 10px;
@@ -879,15 +1115,14 @@ const getPriceText = () => {
   background-color: #fff;
   border-top: 1px solid #eee;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+  z-index: 999;
 }
 .consult-btn, .add-btn, .insure-btn {
   background: none;
   border: none;
   cursor: pointer;
 }
-.consult-btn {
-  color: #666;
-}
+.consult-btn { color: #666; }
 .add-btn {
   width: 36px;
   height: 36px;
@@ -900,6 +1135,7 @@ const getPriceText = () => {
   font-size: 16px;
   font-weight: bold;
   color: #f57c00;
+  margin: 0;
 }
 .insure-btn {
   background-color: #2196f3;

@@ -11,7 +11,7 @@
         <div class="promo-text">
           <h2>添加宠物领取专属身份证</h2>
           <p>专属身份ID · 鼻纹防丢保护 · 看病买药优惠</p>
-          <button class="btn-blue">去添加</button>
+          <button class="btn-blue" @click="goToPetCard">去添加</button>
         </div>
         <img src="@/assets/images/首页图标/首页顶部图.png" class="promo-img" />
       </div>
@@ -20,28 +20,24 @@
       <div class="function-icons">
         <div class="icon-item">
           <div class="icon bg-orange">
-            <!-- 智能问诊图标 -->
             <img src="@/assets/images/首页图标/wenzhen.svg" alt="智能问诊" class="icon-img" />
           </div>
           <span>智能问诊</span>
         </div>
         <div class="icon-item">
           <div class="icon bg-blue">
-            <!-- 疾病百科图标 -->
             <img src="@/assets/images/首页图标/baike-01.svg" alt="疾病百科" class="icon-img" />
           </div>
           <span>疾病百科</span>
         </div>
         <div class="icon-item">
           <div class="icon bg-green">
-            <!-- 找医院图标 -->
             <img src="@/assets/images/首页图标/yiyuan.svg" alt="找医院" class="icon-img" />
           </div>
           <span>找医院</span>
         </div>
         <div class="icon-item">
           <div class="icon bg-purple">
-            <!-- 新手知识图标 -->
             <img src="@/assets/images/首页图标/zhishi.svg" alt="新手知识" class="icon-img" />
           </div>
           <span>新手知识</span>
@@ -62,65 +58,36 @@
                 <h3>小猫小狗也有医保啦</h3>
                 <p class="highlight-text">日常保健 也能报销</p>
                 <p>看病 | 买药 | 服务可报销</p>
-                <button class="btn-pink">领取医保</button>
+                <button class="btn-pink" @click="handleGoToDetail">领取医保</button>
               </div>
             </div>
             <div class="promo-right">
-              <div class="product-grid">
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
+              <!-- 关键修复1：添加v-if确保数据存在，避免渲染null/undefined -->
+              <div class="product-grid" v-if="Array.isArray(randomMallProducts) && randomMallProducts.length > 0">
+                <div class="product-item" v-for="(product, index) in randomMallProducts" :key="index">
+                  <!-- 关键修复2：使用可选链和默认值，避免读取null属性 -->
+                  <img :src="getImgUrl(product?.imgPath || '')" :alt="product?.title || '商品图片'" class="product-img" />
+                  <div class="product-mask">
+                    <!-- 关键修复3：添加防呆处理，product.id存在才执行 -->
+                    <button class="add-cart-btn" @click="product?.id && handleAddToCart(product.id)">加入购物车</button>
+                  </div>
+                  <p class="product-name">{{ product?.title || '未知商品' }}</p>
                   <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
+                    <span class="tag-type">医保</span>
+                    <span class="tag-desc">立省{{ calculateSave(product || {}) }}元</span>
                   </span>
                 </div>
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
-                  <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
-                  </span>
-                </div>
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
-                  <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
-                  </span>
-                </div>
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
-                  <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
-                  </span>
-                </div>
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
-                  <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
-                  </span>
-                </div>
-                <div class="product-item">
-                  <img src="@/assets/images/首页图标/狂犬疫苗.jpg" alt="进口狂犬疫苗" class="product-img" />
-                  <p class="product-name">进口狂犬疫苗</p>
-                  <span class="insurance-tag">
-                   <span class="tag-type">医保</span>
-                   <span class="tag-desc">立省16元</span>
-                  </span>
-                </div>
+              </div>
+              <!-- 加载占位 -->
+              <div v-else class="product-loading">
+                <p>加载商品中...</p>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <!--    底部推荐区域-->
+
+      <!-- 底部推荐区域-->
       <div class="recommend-section">
         <div class="section-header">
           <h2>萌宠治愈时刻</h2>
@@ -156,115 +123,256 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watchEffect } from 'vue' // 新增 watchEffect
 import axios from 'axios'
+import { useRouter } from 'vue-router'
+import { getProductList, addToCart } from '@/api/user/index.js'
+import { ElMessage } from 'element-plus' 
 
+// ========== 基础数据定义 ==========
 const recommendList = ref([])
-const isLoading = ref(false) // 是否正在加载中
-const hasMore = ref(true) // 是否还有更多数据可以加载
+const isLoading = ref(false)
+const hasMore = ref(true)
+const router = useRouter()
 
-// 格式化数据，统一接口和备用数据的结构
+const allMallProducts = ref([])
+const randomMallProducts = ref([])
+
+// 把 userId 改为响应式变量，确保登录后能实时更新
+const userId = ref(1)
+// 新增：单独维护登录状态，避免依赖 userId 判断
+const isLogin = ref(false)
+
+// 关键修复2：封装登录状态读取函数，统一逻辑
+const checkLoginStatus = () => {
+  try {
+    const userInfo = localStorage.getItem('userInfo')
+    // 兼容可能存储的 userData 键名（很多项目会用这个）
+    const userData = localStorage.getItem('userData') || userInfo
+    
+    if (userData) {
+      const parsed = JSON.parse(userData)
+      // 兼容多种字段名：userId/id/user_id
+      userId.value = parsed.userId || parsed.id || parsed.user_id || 1
+      isLogin.value = true // 明确标记已登录
+      console.log('当前登录用户ID：', userId.value) // 调试用，可删除
+    } else {
+      userId.value = 1
+      isLogin.value = false
+    }
+  } catch (e) {
+    console.error('解析用户信息失败：', e)
+    userId.value = 1
+    isLogin.value = false
+  }
+}
+
+// 关键修复3：立即执行一次，初始化登录状态
+checkLoginStatus()
+
+// 关键修复4：监听 localStorage 变化，实时更新登录状态
+watchEffect(() => {
+  // 监听 userInfo/userData 变化（比如登录后存储）
+  checkLoginStatus()
+})
+
+// ========== 工具函数 ==========
 const formatData = (data) => {
-  return data.map(item => ({
-    _id: item._id || item.id,
-    url: item.url,
-    author: item.author,
-    content: item.content
+  return (data || []).map(item => ({
+    _id: item._id || item.id || Math.random().toString(36).slice(2),
+    url: item.url || '',
+    author: item.author || '未知作者',
+    content: item.content || '暂无描述'
   }))
 }
 
-// 从接口获取数据
-const fetchData = async ( pageSize = 6) => {
-  try {
-    // 模拟分页，实际项目中如果接口支持分页，需要传page参数
-    // 这里用size控制每次加载的数量
-    const res = await axios.get('https://tea.qingnian8.com/tools/petShow', {
-      headers: {
-        'access-key': '925255' // 将密钥放入请求头
-      },
-      params: {
-        size: pageSize,
-        type: 'all',
-        'access-key': 'lp9899'
-      }
-    })
+const getImgUrl = (imgPath) => {
+  if (!imgPath || typeof imgPath !== 'string' || imgPath.trim() === '') {
+    return '/assets/images/default-product.png';
+  }
 
+  const path = imgPath.replace(/^@\//, '/src/')
+  const formattedPath = path.replace(/\\/g, '/').replace(/^\/+/, '')
+  
+  if (formattedPath.startsWith('http')) {
+    return formattedPath
+  }
+  return `http://localhost:8080/${formattedPath}`
+}
+
+const calculateSave = (product) => {
+  const nowPrice = Number((product?.nowPrice || '0').replace(/[^\d.]/g, ''))
+  const oldPrice = Number((product?.oldPrice || '0').replace(/[^\d.]/g, ''))
+  return (oldPrice - nowPrice).toFixed(2)
+}
+
+// ========== 核心方法 ==========
+const handleAddToCart = async (productId) => {
+  if (!productId || isNaN(Number(productId))) {
+    ElMessage.error('商品ID异常，无法加入购物车')
+    return
+  }
+
+  try {
+    // 关键修复5：改用独立的 isLogin 变量判断，不再依赖 userId
+    if (!isLogin.value) {
+      ElMessage.warning('请先登录后再加入购物车')
+      nextTick(() => {
+        router.push('/my') // 确保 /my 是登录页面路由
+      })
+      return
+    }
+
+    // 调用接口（添加超时控制）
+    const result = await Promise.race([
+      addToCart(userId.value, productId, 1), // 注意：userId 现在是响应式，要加 .value
+      new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), 10000))
+    ])
+
+    if (typeof result === 'string') {
+      if (result.includes('成功') || result === 'success' || result === '添加成功') {
+        ElMessage.success('加入购物车成功！')
+        nextTick(() => {
+          router.push({ path: '/mall' })
+        })
+      } else {
+        ElMessage.error(`加入购物车失败：${result}`)
+      }
+    } else {
+      ElMessage.error('加入购物车失败，返回数据格式异常')
+    }
+  } catch (err) {
+    console.error('加入购物车失败：', err)
+    ElMessage.error(err?.msg || err?.message || '加入购物车失败，请稍后重试')
+  }
+}
+
+const handleGoToDetail = () => {
+  nextTick(() => {
+    router.push('/guarantee')
+  })
+}
+const goToPetCard = () => {
+  router.push({
+    path: '/pet-id-card',
+    query: { userId: userId.value }
+  })
+}
+// ========== 数据加载 ==========
+const fetchData = async (pageSize = 6) => {
+  try {
+    const res = await axios.get('https://tea.qingnian8.com/tools/petShow', {
+      headers: { 'access-key': '925255' },
+      params: { size: pageSize, type: 'all', 'access-key': 'lp9899' },
+      timeout: 10000
+    })
     if (res.data.errCode === 0) {
       const formattedData = formatData(res.data.data)
-      // 如果返回的数据少于请求数量，说明没有更多数据了
-      if (formattedData.length < pageSize) {
-        hasMore.value = false
-      }
+      hasMore.value = formattedData.length >= pageSize
       return formattedData
     }
     return []
   } catch (err) {
-    console.error('接口请求失败：', err)
+    console.error('获取萌宠数据失败：', err)
     return []
   }
 }
 
-// 加载更多数据的函数
 const loadMore = async () => {
-  // 如果正在加载中，或者没有更多数据了，则不执行任何操作
   if (isLoading.value || !hasMore.value) return
-
-  isLoading.value = true // 开始加载
+  isLoading.value = true
 
   try {
-    // 每次加载3条新数据
-    const newData = await fetchData(1, 3)
-
+    const newData = await fetchData(3)
     if (newData.length > 0) {
-      recommendList.value = [...recommendList.value, ...newData] // 追加新数据
+      recommendList.value = [...recommendList.value, ...newData]
     } else {
-      hasMore.value = false // 如果没有获取到新数据，说明已加载完毕
+      hasMore.value = false
     }
   } finally {
-    isLoading.value = false // 无论成功失败，都结束加载状态
+    isLoading.value = false
   }
 }
 
-// 监听滚动事件
-const handleScroll = () => {
-  // 当距离底部小于200px时，触发加载更多
-  if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 200) {
-    loadMore()
+const loadMallProducts = async () => {
+  try {
+    const productData = await getProductList()
+    allMallProducts.value = Array.isArray(productData) ? productData : []
+    
+    if (allMallProducts.value.length > 0) {
+      const shuffled = [...allMallProducts.value].sort(() => 0.5 - Math.random())
+      randomMallProducts.value = shuffled.slice(0, 6)
+    } else {
+      randomMallProducts.value = [
+        { id: 1, title: '进口狂犬疫苗', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '88', oldPrice: '104' },
+        { id: 2, title: '大宠爱驱虫药', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '128', oldPrice: '158' },
+        { id: 3, title: '猫咪化毛膏', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '45', oldPrice: '68' },
+        { id: 4, title: '狗狗钙片', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '39', oldPrice: '59' },
+        { id: 5, title: '宠物益生菌', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '58', oldPrice: '88' },
+        { id: 6, title: '猫砂除臭珠', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '29', oldPrice: '45' }
+      ]
+    }
+  } catch (err) {
+    console.error('加载商城商品失败：', err)
+    ElMessage.error('获取商城商品失败，显示默认商品')
+    randomMallProducts.value = [
+      { id: 1, title: '进口狂犬疫苗', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '88', oldPrice: '104' },
+      { id: 2, title: '大宠爱驱虫药', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '128', oldPrice: '158' },
+      { id: 3, title: '猫咪化毛膏', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '45', oldPrice: '68' },
+      { id: 4, title: '狗狗钙片', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '39', oldPrice: '59' },
+      { id: 5, title: '宠物益生菌', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '58', oldPrice: '88' },
+      { id: 6, title: '猫砂除臭珠', imgPath: '@/assets/images/首页图标/狂犬疫苗.jpg', nowPrice: '29', oldPrice: '45' }
+    ]
   }
 }
 
+// ========== 生命周期 ==========
 onMounted(async () => {
-  // 初始加载6条数据
-  const initialData = await fetchData(1, 6)
-  if (initialData.length > 0) {
-    recommendList.value = initialData
-  } else {
-    // 如果初始加载失败，则使用备用数据
-    recommendList.value = formatData([
-      { id: 1, url: 'https://picsum.photos/seed/cat1/600/400', author: '爱宠基地联盟', content: '是个黏人的崽，颜值真的没话说' },
-      { id: 2, url: 'https://picsum.photos/seed/dog1/600/400', author: '汪星人日记', content: '快乐小狗，治愈每一天' },
-      { id: 3, url: 'https://picsum.photos/seed/cat2/600/400', author: '喵星人部落', content: '慵懒又可爱，谁能不爱呢' },
-      { id: 4, url: 'https://picsum.photos/seed/dog2/600/400', author: '短腿柯基控', content: '短腿柯基，萌化你的心' },
-      { id: 5, url: 'https://picsum.photos/seed/cat3/600/400', author: '猫咪日常', content: '安静乖巧，是理想的陪伴' },
-      { id: 6, url: 'https://picsum.photos/seed/dog3/600/400', author: '金毛寻回', content: '金毛寻回，暖心又忠诚' }
-    ])
-    hasMore.value = false // 备用数据只有6条，所以没有更多了
-  }
+  // 关键修复6：页面挂载时重新检查登录状态（防止登录后页面没刷新）
+  checkLoginStatus()
+  
+  await loadMallProducts()
+  
+  const initialData = await fetchData(6)
+  recommendList.value = initialData.length > 0 ? initialData : formatData([
+    { id: 1, url: 'https://picsum.photos/seed/cat1/600/400', author: '爱宠基地联盟', content: '是个黏人的崽，颜值真的没话说' },
+    { id: 2, url: 'https://picsum.photos/seed/dog1/600/400', author: '汪星人日记', content: '快乐小狗，治愈每一天' },
+    { id: 3, url: 'https://picsum.photos/seed/cat2/600/400', author: '喵星人部落', content: '慵懒又可爱，谁能不爱呢' },
+    { id: 4, url: 'https://picsum.photos/seed/dog2/600/400', author: '短腿柯基控', content: '短腿柯基，萌化你的心' },
+    { id: 5, url: 'https://picsum.photos/seed/cat3/600/400', author: '猫咪日常', content: '安静乖巧，是理想的陪伴' },
+    { id: 6, url: 'https://picsum.photos/seed/dog3/600/400', author: '金毛寻回', content: '金毛寻回，暖心又忠诚' }
+  ])
+  hasMore.value = initialData.length >= 6
 
-  // 开始监听滚动事件
-  window.addEventListener('scroll', handleScroll)
+  const debounceHandleScroll = debounce(() => {
+    if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 200) {
+      loadMore()
+    }
+  }, 200)
+  window.addEventListener('scroll', debounceHandleScroll)
+  
+  window._petHomeScrollHandler = debounceHandleScroll
 })
 
 onUnmounted(() => {
-  // 组件销毁时，移除滚动监听，防止内存泄漏
-  window.removeEventListener('scroll', handleScroll)
+  window.removeEventListener('scroll', window._petHomeScrollHandler)
+  delete window._petHomeScrollHandler
 })
+
+// 防抖工具函数
+const debounce = (fn, delay) => {
+  let timer = null
+  return (...args) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn.apply(this, args), delay)
+  }
+}
 </script>
 
 <style scoped>
-/* 外层居中容器 */
+/* 基础样式（保持不变，新增商品加载占位样式） */
 .page-container {
-  max-width: 1200px; /* 可根据需求调整最大宽度 */
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 15px;
 }
@@ -272,42 +380,52 @@ onUnmounted(() => {
 .pet-home {
   padding: 16px;
 }
+
 .search-bar {
   margin-bottom: 20px;
 }
+
 .search-bar input {
   width: 100%;
   padding: 10px;
   border-radius: 8px;
   border: 1px solid #ddd;
 }
+
 .promo-card {
   display: flex;
+  align-items: center;
   background: linear-gradient(135deg, #64b5f6, #7e57c2);
   border-radius: 12px;
   color: #fff;
   padding: 20px;
   margin-bottom: 20px;
 }
+
 .promo-text {
   flex: 1;
 }
+
 .promo-img {
-  width: 120px;
-  height: 120px;
+  width: 150px;
+  height: auto;
   object-fit: contain;
+  margin-left: auto;
 }
+
 .function-icons {
   display: flex;
   justify-content: space-between;
   margin-bottom: 20px;
 }
+
 .icon-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 23%;
 }
+
 .icon {
   width: 60px;
   height: 60px;
@@ -317,6 +435,7 @@ onUnmounted(() => {
   justify-content: center;
   margin-bottom: 8px;
 }
+
 .bg-orange { background: #f4e49c; }
 .bg-blue { background: #75ccf3; }
 .bg-green { background: #c5f39e; }
@@ -331,31 +450,12 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-/* 调整顶部推广图的尺寸和对齐 */
-.promo-card {
-  display: flex;
-  align-items: center; /* 垂直居中 */
-  background: linear-gradient(135deg, #64b5f6, #7e57c2);
-  border-radius: 12px;
-  color: #fff;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-.promo-img {
-  width: 150px; /* 调整宽度适配设计 */
-  height: auto; /* 高度自动，保持比例 */
-  object-fit: contain;
-  margin-left: auto; /* 右对齐 */
-}
-
-/* 图标样式适配 */
 .function-icons .icon-img {
   width: 40px;
   height: 40px;
   object-fit: contain;
 }
-/* 宠物医保推广区域 */
-/* 标题区域样式 */
+
 .insurance-header {
   background: #ffebee;
   border-radius: 12px;
@@ -394,7 +494,6 @@ onUnmounted(() => {
   background: #fff;
 }
 
-/* 左侧图片区域 */
 .promo-left {
   position: relative;
   width: 45%;
@@ -407,7 +506,6 @@ onUnmounted(() => {
   display: block;
 }
 
-/* 右侧商品区域 */
 .promo-right {
   width: 55%;
   padding: 16px;
@@ -445,11 +543,21 @@ onUnmounted(() => {
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
+/* 关键：商品加载占位样式 */
+.product-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #999;
+  font-size: 14px;
+}
+
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr); /* 3列，每列等宽 */
-  grid-template-rows: repeat(2, auto);  /* 2行，高度自适应内容 */
-  gap: 12px; /* 列与行之间的间距 */
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, auto);
+  gap: 12px;
 }
 
 .product-item {
@@ -463,6 +571,8 @@ onUnmounted(() => {
   flex-direction: column;
   justify-content: center;
   height: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .product-item img {
@@ -473,8 +583,54 @@ onUnmounted(() => {
   display: block;
   margin: 0 auto 8px;
 }
+
+.product-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  font-size: 14px;
+  margin: 8px 0;
+  line-height: 1.4;
+}
+
+.product-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 8px;
+}
+
+.product-item:hover .product-mask {
+  opacity: 1;
+}
+
+.add-cart-btn {
+  background: #e53935;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.add-cart-btn:hover {
+  background: #d32f2f;
+}
+
 .insurance-tag {
-  display: inline-flex;
   align-items: center;
   background: #fff;
   border-radius: 4px;
@@ -495,7 +651,7 @@ onUnmounted(() => {
 .tag-desc {
   font-weight: 500;
 }
-/*底部推荐区域*/
+
 .recommend-section {
   background: #fff;
   border-radius: 12px;
@@ -566,5 +722,4 @@ onUnmounted(() => {
   color: #666;
   margin: 0;
 }
-
 </style>
