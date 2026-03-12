@@ -295,3 +295,122 @@ export const searchMerchantOrder = (searchParams = {}) => {
     userIdLike: searchParams.userIdLike
   })
 }
+
+// ====================== 商家端理赔订单管理接口（匹配后端 PetInsuranceClaimController） ======================
+/**
+ * 1. 商家端分页多条件查询理赔订单
+ * @param {Object} params 查询参数 {pageNum, pageSize, claimNo, userId, claimStatus}
+ * @returns {Promise}
+ */
+export const getMerchantClaimList = (params = {}) => {
+  // 空值过滤，避免传递无效参数
+  const queryParams = {}
+  // 分页参数
+  if (params.pageNum !== undefined) queryParams.pageNum = params.pageNum
+  if (params.pageSize !== undefined) queryParams.pageSize = params.pageSize
+  // 精准查询
+  if (params.userId !== undefined && params.userId !== null) {
+    queryParams.userId = params.userId
+  }
+  if (params.claimStatus !== undefined) {
+    queryParams.claimStatus = params.claimStatus
+  }
+  // 模糊查询
+  if (params.claimNo !== undefined && params.claimNo.trim() !== '') {
+    queryParams.claimNo = params.claimNo.trim()
+  }
+
+  return request({
+    url: '/api/claim/merchant/page',
+    method: 'get',
+    params: queryParams
+  })
+}
+
+/**
+ * 2. 商家端查询理赔订单详情（含宠物/保险订单信息+材料列表）
+ * @param {Number} claimId 理赔单ID
+ * @returns {Promise}
+ */
+export const getMerchantClaimDetail = (claimId) => {
+  return request({
+    url: `/api/claim/merchant/detail/${claimId}`,
+    method: 'get'
+  })
+}
+
+/**
+ * 3. 商家端理赔审核操作（通过/驳回）
+ * @param {Object} data 审核参数 {id, claimStatus, auditorId, auditRemark}
+ *                      claimStatus: 2=通过，3=驳回
+ * @returns {Promise}
+ */
+export const auditClaim = (data) => {
+  return request({
+    url: `/api/claim/merchant/audit/${data.id}`,
+    method: 'put',
+    params: {
+      claimStatus: data.claimStatus,
+      auditorId: data.auditorId,
+      auditRemark: data.auditRemark
+    }
+  })
+}
+
+/**
+ * 4. 商家端理赔打款确认（更新状态为4=理赔完成）
+ * @param {Object} data 打款参数 {id, auditRemark} (auditRemark复用为打款备注)
+ * @returns {Promise}
+ */
+export const confirmClaimPay = (data) => {
+  return request({
+    url: `/api/claim/merchant/pay/${data.id}`,
+    method: 'put',
+    params: {
+      auditRemark: data.auditRemark
+    }
+  })
+}
+
+/**
+ * 5. 快捷查询：商家端精准查询单个理赔单
+ * @param {Number} claimId 理赔单ID
+ * @returns {Promise}
+ */
+export const getMerchantClaimByClaimId = (claimId) => {
+  return getMerchantClaimList({
+    pageNum: 1,
+    pageSize: 1,
+    claimId: claimId
+  })
+}
+
+/**
+ * 6. 快捷查询：商家端查询指定用户的所有理赔单
+ * @param {Number} userId 用户ID
+ * @param {Number} pageNum 页码
+ * @param {Number} pageSize 每页条数
+ * @returns {Promise}
+ */
+export const getMerchantClaimByUserId = (userId, pageNum = 1, pageSize = 10) => {
+  return getMerchantClaimList({
+    pageNum,
+    pageSize,
+    userId: userId
+  })
+}
+
+/**
+ * 7. 快捷查询：商家端按状态筛选理赔单（如待审核/已通过/已驳回）
+ * @param {Number} claimStatus 理赔状态
+ * @param {Number} pageNum 页码
+ * @param {Number} pageSize 每页条数
+ * @returns {Promise}
+ */
+export const getMerchantClaimByStatus = (claimStatus, pageNum = 1, pageSize = 10) => {
+  return getMerchantClaimList({
+    pageNum,
+    pageSize,
+    claimStatus: claimStatus
+  })
+}

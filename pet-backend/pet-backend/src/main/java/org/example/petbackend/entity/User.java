@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @Data
 public class User {
     @TableId(type = IdType.AUTO)
-    private Integer userId; // 用户唯一ID（自增主键）
+    private Long userId; // 用户唯一ID（自增主键）
 
     @NotBlank(message = "用户名不能为空")
     private String username; // 用户名（登录账号，非空）

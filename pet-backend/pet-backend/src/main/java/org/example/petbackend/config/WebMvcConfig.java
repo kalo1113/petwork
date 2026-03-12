@@ -37,6 +37,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Value("${upload.insurance-img-access-path}")
     private String insuranceImgAccessPath;
 
+    // 理赔图片配置（新增）
+    @Value("${upload.claim-img-path}")
+    private String claimImgPath;
+    @Value("${upload.claim-img-access-path}")
+    private String claimImgAccessPath;
+
 
     // 日期格式化（保持不变）
     @Override
@@ -69,6 +75,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
         log.info("保险图片映射：{} → {}", insuranceImgAccessPath + "**", insuranceImgPath);
         registry.addResourceHandler(insuranceImgAccessPath + "**")
                 .addResourceLocations(insuranceImgPath );
+
+        // 5. 理赔申请图片映射（关键：与数据库路径/claim-img/匹配）
+        log.info("保险图片映射：{} → {}", claimImgAccessPath + "**", claimImgPath);
+        registry.addResourceHandler(claimImgAccessPath + "**")
+                .addResourceLocations(claimImgPath );
 
     }
 }

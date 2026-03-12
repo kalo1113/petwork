@@ -16,33 +16,6 @@
         <img src="@/assets/images/首页图标/首页顶部图.png" class="promo-img" />
       </div>
 
-      <!-- 功能入口 -->
-      <div class="function-icons">
-        <div class="icon-item">
-          <div class="icon bg-orange">
-            <img src="@/assets/images/首页图标/wenzhen.svg" alt="智能问诊" class="icon-img" />
-          </div>
-          <span>智能问诊</span>
-        </div>
-        <div class="icon-item">
-          <div class="icon bg-blue">
-            <img src="@/assets/images/首页图标/baike-01.svg" alt="疾病百科" class="icon-img" />
-          </div>
-          <span>疾病百科</span>
-        </div>
-        <div class="icon-item">
-          <div class="icon bg-green">
-            <img src="@/assets/images/首页图标/yiyuan.svg" alt="找医院" class="icon-img" />
-          </div>
-          <span>找医院</span>
-        </div>
-        <div class="icon-item">
-          <div class="icon bg-purple">
-            <img src="@/assets/images/首页图标/zhishi.svg" alt="新手知识" class="icon-img" />
-          </div>
-          <span>新手知识</span>
-        </div>
-      </div>
 
       <!-- 宠物医保推广 -->
       <div class="insurance-header">
@@ -262,7 +235,7 @@ const goToPetCard = () => {
 const fetchData = async (pageSize = 6) => {
   try {
     const res = await axios.get('https://tea.qingnian8.com/tools/petShow', {
-      headers: { 'access-key': '925255' },
+      headers: { 'access-key': '492606' },
       params: { size: pageSize, type: 'all', 'access-key': 'lp9899' },
       timeout: 10000
     })

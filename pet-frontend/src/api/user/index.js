@@ -51,6 +51,8 @@ const addressAxios = createAxiosInstance(BASE_URL)
 const insuranceAxios = createAxiosInstance(BASE_URL)
 // 宠物保险订单模块实例（新增，复用BASE_URL）
 const insuranceOrderAxios = createAxiosInstance(BASE_URL)
+// 宠物保险理赔模块实例（新增）
+const claimAxios = createAxiosInstance(BASE_URL)
 
 // ===================== 用户接口 =====================
 // 登录
@@ -1024,29 +1026,340 @@ export const deleteInsuranceBenefit = async (benefitId) => {
   })
 }
 
-// 扩展工具函数：更新赠送服务次数（前端封装，简化调用）
-export const updateFreeServiceCount = async (benefitId, serviceKey, reduceCount = 1) => {
-  // 1. 先查询当前权益记录
-  const benefit = await getInsuranceBenefitByOrderId(benefitId)
-  if (!benefit || !benefit.freeServiceRemaining) {
-    ElMessage.error('暂无赠送服务记录')
-    throw new Error('免费服务记录为空')
+// ===================== 宠物保险理赔接口（新增） =====================
+/**
+ * 1. 根据ID查询理赔申请详情
+ * GET /api/claim/{id}
+ * @param {Number} id 理赔申请ID
+ * @returns {Promise} 理赔详情
+ */
+export const getClaimById = async (id) => {
+  if (isNaN(Number(id)) || Number(id) <= 0) {
+    ElMessage.error('理赔申请ID必须为正整数')
+    throw new Error('claimId不合法')
   }
-  
-  // 2. 解析JSON并更新次数
-  let serviceObj = JSON.parse(benefit.freeServiceRemaining)
-  if (!serviceObj[serviceKey]) {
-    ElMessage.error(`暂无${serviceKey}服务次数`)
-    throw new Error(`${serviceKey}服务不存在`)
+  return claimAxios.get(`/api/claim/${Number(id)}`)
+}
+
+/**
+ * 2. 根据理赔单号查询详情
+ * GET /api/claim/by-no/{claimNo}
+ * @param {String} claimNo 理赔单号
+ * @returns {Promise} 理赔详情
+ */
+export const getClaimByClaimNo = async (claimNo) => {
+  if (!claimNo || claimNo.trim() === '') {
+    ElMessage.error('理赔单号不能为空')
+    throw new Error('claimNo为空')
   }
-  const newCount = serviceObj[serviceKey] - reduceCount
-  if (newCount < 0) {
-    ElMessage.error(`${serviceKey}服务次数不足`)
-    throw new Error(`${serviceKey}服务次数不足`)
+  return claimAxios.get(`/api/claim/by-no/${claimNo.trim()}`)
+}
+
+/**
+ * 3. 根据用户ID查询理赔申请列表
+ * GET /api/claim/by-user/{userId}
+ * @param {Number} userId 用户ID
+ * @returns {Promise} 理赔列表
+ */
+export const getClaimListByUserId = async (userId) => {
+  if (isNaN(Number(userId)) || Number(userId) <= 0) {
+    ElMessage.error('用户ID必须为正整数')
+    throw new Error('userId不合法')
   }
-  serviceObj[serviceKey] = newCount
-  
-  // 3. 转换为JSON字符串并更新
-  const newServiceJson = JSON.stringify(serviceObj)
-  return updateFreeServiceRemaining(benefit.id, newServiceJson)
+  return claimAxios.get(`/api/claim/by-user/${Number(userId)}`)
+}
+
+/**
+ * 4. 根据保险订单ID查询理赔申请列表
+ * GET /api/claim/by-order/{orderId}
+ * @param {Number} orderId 保险订单ID
+ * @returns {Promise} 理赔列表
+ */
+export const getClaimListByOrderId = async (orderId) => {
+  if (isNaN(Number(orderId)) || Number(orderId) <= 0) {
+    ElMessage.error('保险订单ID必须为正整数')
+    throw new Error('orderId不合法')
+  }
+  return claimAxios.get(`/api/claim/by-order/${Number(orderId)}`)
+}
+
+/**
+ * 5. 根据状态分页查询理赔申请列表
+ * GET /api/claim/by-status/{status}?pageNum=1&pageSize=10
+ * @param {Number} status 理赔状态
+ * @param {Number} pageNum 页码（默认1）
+ * @param {Number} pageSize 每页条数（默认10）
+ * @returns {Promise} 分页理赔列表
+ */
+export const getClaimListByStatus = async (status, pageNum = 1, pageSize = 10) => {
+  if (isNaN(Number(status))) {
+    ElMessage.error('理赔状态必须为数字')
+    throw new Error('status不合法')
+  }
+  if (isNaN(Number(pageNum)) || pageNum < 1) {
+    ElMessage.error('页码必须大于0')
+    throw new Error('pageNum不合法')
+  }
+  if (isNaN(Number(pageSize)) || pageSize < 1 || pageSize > 100) {
+    ElMessage.error('每页条数必须在1-100之间')
+    throw new Error('pageSize不合法')
+  }
+  return claimAxios.get(`/api/claim/by-status/${Number(status)}`, {
+    params: {
+      pageNum: Number(pageNum),
+      pageSize: Number(pageSize)
+    }
+  })
+}
+
+/**
+ * 6. 创建理赔申请
+ * POST /api/claim
+ * @param {Object} claimData 理赔申请数据
+ * @returns {Promise} 创建结果
+ */
+export const createInsuranceClaim = async (claimData) => {
+  // 基础参数校验（与后端一致）
+  if (isNaN(Number(claimData.userId)) || Number(claimData.userId) <= 0) {
+    ElMessage.error('用户ID必须为正整数')
+    throw new Error('userId不合法')
+  }
+  if (isNaN(Number(claimData.insuranceOrderId)) || Number(claimData.insuranceOrderId) <= 0) {
+    ElMessage.error('保险订单ID必须为正整数')
+    throw new Error('insuranceOrderId不合法')
+  }
+  if (!claimData.petType || claimData.petType.trim() === '') {
+    ElMessage.error('宠物种类不能为空')
+    throw new Error('petType为空')
+  }
+  if (!claimData.petNickname || claimData.petNickname.trim() === '') {
+    ElMessage.error('宠物昵称不能为空')
+    throw new Error('petNickname为空')
+  }
+  if (!claimData.contactPhone || !/^1[3-9]\d{9}$/.test(claimData.contactPhone)) {
+    ElMessage.error('请输入正确的联系电话')
+    throw new Error('contactPhone不合法')
+  }
+  if (!claimData.realName || claimData.realName.trim() === '') {
+    ElMessage.error('真实姓名不能为空')
+    throw new Error('realName为空')
+  }
+  if (!claimData.userEmail || !/^[\w.-]+@[a-zA-Z0-9-]+\.[a-zA-Z]+$/.test(claimData.userEmail)) {
+    ElMessage.error('请输入正确的邮箱')
+    throw new Error('userEmail不合法')
+  }
+  if (claimData.isSurgery === '' || claimData.isSurgery === undefined) {
+    ElMessage.error('请选择是否手术')
+    throw new Error('isSurgery未选择')
+  }
+  if (!claimData.accidentTime) {
+    ElMessage.error('出险时间不能为空')
+    throw new Error('accidentTime为空')
+  }
+  if (claimData.hospitalType === '' || claimData.hospitalType === undefined) {
+    ElMessage.error('请选择就诊医院类型')
+    throw new Error('hospitalType未选择')
+  }
+  if (isNaN(Number(claimData.medicalCost)) || Number(claimData.medicalCost) <= 0) {
+    ElMessage.error('就诊费用必须大于0')
+    throw new Error('medicalCost不合法')
+  }
+  if (!claimData.illnessDesc || claimData.illnessDesc.trim().length < 10) {
+    ElMessage.error('病情描述至少10个字')
+    throw new Error('illnessDesc不合法')
+  }
+
+  // 图片URL字段兜底（避免后端接收null）
+  const submitData = {
+    ...claimData,
+    petFrontPhotoUrl: claimData.petFrontPhotoUrl || '',
+    petFullPhotoUrl: claimData.petFullPhotoUrl || '',
+    medicalRecordUrl: claimData.medicalRecordUrl || '',
+    inspectionReportUrl: claimData.inspectionReportUrl || '',
+    costDetailUrl: claimData.costDetailUrl || '',
+    medicalInvoiceUrl: claimData.medicalInvoiceUrl || '',
+    treatmentPhotoUrl: claimData.treatmentPhotoUrl || ''
+  }
+
+  return claimAxios.post('/api/claim', submitData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+/**
+ * 7. 更新理赔申请状态
+ * PUT /api/claim/{id}/status
+ * @param {Number} id 理赔ID
+ * @param {Number} status 目标状态
+ * @param {Number} [auditorId] 审核人ID（可选）
+ * @param {String} [auditRemark] 审核备注（可选）
+ * @returns {Promise} 更新结果
+ */
+export const updateClaimStatus = async (id, status, auditorId, auditRemark) => {
+  if (isNaN(Number(id)) || Number(id) <= 0) {
+    ElMessage.error('理赔ID必须为正整数')
+    throw new Error('claimId不合法')
+  }
+  if (isNaN(Number(status))) {
+    ElMessage.error('理赔状态必须为数字')
+    throw new Error('status不合法')
+  }
+
+  const params = { status }
+  if (auditorId !== undefined && !isNaN(Number(auditorId))) {
+    params.auditorId = Number(auditorId)
+  }
+  if (auditRemark !== undefined && auditRemark.trim() !== '') {
+    params.auditRemark = auditRemark.trim()
+  }
+
+  return claimAxios.put(`/api/claim/${Number(id)}/status`, null, { params })
+}
+
+/**
+ * 8. 删除理赔申请（逻辑删除）
+ * DELETE /api/claim/{id}
+ * @param {Number} id 理赔ID
+ * @returns {Promise} 删除结果
+ */
+export const deleteClaim = async (id) => {
+  if (isNaN(Number(id)) || Number(id) <= 0) {
+    ElMessage.error('理赔ID必须为正整数')
+    throw new Error('claimId不合法')
+  }
+  return claimAxios.delete(`/api/claim/${Number(id)}`)
+}
+
+/**
+ * 9. 分页查询所有理赔申请（管理员接口）
+ * GET /api/claim/page?pageNum=1&pageSize=10
+ * @param {Number} pageNum 页码（默认1）
+ * @param {Number} pageSize 每页条数（默认10）
+ * @returns {Promise} 分页理赔列表
+ */
+export const getClaimPage = async (pageNum = 1, pageSize = 10) => {
+  if (isNaN(Number(pageNum)) || pageNum < 1) {
+    ElMessage.error('页码必须大于0')
+    throw new Error('pageNum不合法')
+  }
+  if (isNaN(Number(pageSize)) || pageSize < 1 || pageSize > 100) {
+    ElMessage.error('每页条数必须在1-100之间')
+    throw new Error('pageSize不合法')
+  }
+  return claimAxios.get('/api/claim/page', {
+    params: {
+      pageNum: Number(pageNum),
+      pageSize: Number(pageSize)
+    }
+  })
+}
+
+/**
+ * 10. 上传理赔材料（兼容临时claimId=0）
+ * POST /api/claim/upload-material
+ * @param {File} file 上传文件
+ * @param {Number} claimId 理赔ID（允许0作为临时标识）
+ * @param {String} materialType 材料类型（petFrontPhoto/petFullPhoto/medicalRecord等）
+ * @returns {Promise} 上传结果（含图片访问URL）
+ */
+export const uploadClaimMaterial = async (file, claimId, materialType) => {
+  if (!file) {
+    ElMessage.error('上传文件不能为空')
+    throw new Error('file为空')
+  }
+  if (claimId === null || claimId === undefined) {
+    ElMessage.error('理赔ID不能为空')
+    throw new Error('claimId为空')
+  }
+  const validTypes = ['petFrontPhoto', 'petFullPhoto', 'medicalRecord', 'inspectionReport', 'costDetail', 'medicalInvoice', 'treatmentPhoto']
+  if (!materialType || !validTypes.includes(materialType)) {
+    ElMessage.error(`材料类型不合法，仅支持：${validTypes.join('、')}`)
+    throw new Error('materialType不合法')
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('claimId', Number(claimId))
+  formData.append('materialType', materialType)
+
+  return claimAxios.post('/api/claim/upload-material', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+/**
+ * 11. 更新临时材料的关联claimId（将temp文件关联到真实理赔ID）
+ * PUT /api/claim/update-material-claim-id
+ * @param {Number} oldClaimId 旧理赔ID（临时ID=0）
+ * @param {Number} newClaimId 新理赔ID（真实ID）
+ * @param {Array<String>} materialUrls 上传成功的材料URL列表
+ * @returns {Promise} 更新结果
+ */
+export const updateMaterialClaimId = async (oldClaimId, newClaimId, materialUrls) => {
+  if (oldClaimId === null || oldClaimId === undefined) {
+    ElMessage.error('旧理赔ID不能为空')
+    throw new Error('oldClaimId为空')
+  }
+  if (isNaN(Number(newClaimId)) || Number(newClaimId) <= 0) {
+    ElMessage.error('新理赔ID必须为正整数')
+    throw new Error('newClaimId不合法')
+  }
+  if (!Array.isArray(materialUrls) || materialUrls.length === 0) {
+    ElMessage.error('材料URL列表不能为空')
+    throw new Error('materialUrls为空')
+  }
+
+  // 转逗号分隔字符串传递
+  const materialUrlsStr = materialUrls.filter(url => url && url.trim() !== '').join(',')
+  if (materialUrlsStr === '') {
+    ElMessage.error('材料URL列表不能为空')
+    throw new Error('materialUrls无有效URL')
+  }
+
+  return claimAxios.put('/api/claim/update-material-claim-id', null, {
+    params: {
+      oldClaimId: Number(oldClaimId),
+      newClaimId: Number(newClaimId),
+      materialUrls: materialUrlsStr
+    }
+  })
+}
+
+/**
+ * 12. 更新理赔申请的图片URL
+ * PUT /api/claim/{id}/urls
+ * @param {Number} id 理赔ID
+ * @param {Object} urlData 图片URL映射（key为URL字段名，value为URL值）
+ * @returns {Promise} 更新结果
+ */
+export const updateClaimUrls = async (id, urlData) => {
+  if (isNaN(Number(id)) || Number(id) <= 0) {
+    ElMessage.error('理赔ID必须为正整数')
+    throw new Error('claimId不合法')
+  }
+  if (typeof urlData !== 'object' || urlData === null) {
+    ElMessage.error('URL数据必须为对象')
+    throw new Error('urlData不合法')
+  }
+
+  const validUrlFields = [
+    'petFrontPhotoUrl', 'petFullPhotoUrl', 'medicalRecordUrl',
+    'inspectionReportUrl', 'costDetailUrl', 'medicalInvoiceUrl', 'treatmentPhotoUrl'
+  ]
+  // 过滤无效字段
+  const validData = Object.keys(urlData).reduce((obj, key) => {
+    if (validUrlFields.includes(key) && typeof urlData[key] === 'string') {
+      obj[key] = urlData[key].trim()
+    }
+    return obj
+  }, {})
+
+  if (Object.keys(validData).length === 0) {
+    ElMessage.error('无有效URL字段需要更新')
+    throw new Error('validData为空')
+  }
+
+  return claimAxios.put(`/api/claim/${Number(id)}/urls`, validData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
 }

@@ -9,25 +9,27 @@ import org.springframework.stereotype.Service;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
-@Service // 标识这是业务层组件
+@Service
 public class PetServiceImpl extends ServiceImpl<PetMapper, Pet> implements PetService {
 
     @Override
     public boolean addPet(Pet pet) {
-        // 补充默认值：创建时间和更新时间
         pet.setCreateTime(LocalDateTime.now());
         pet.setUpdateTime(LocalDateTime.now());
-        // 调用 Mapper 的 insert 方法新增数据（MyBatis-Plus 自带）
-        return baseMapper.insert(pet) > 0; // 插入成功返回 true，失败返回 false
+        return baseMapper.insert(pet) > 0;
     }
-//    Serializable 是 Integer 的父接口（Integer 实现了 Serializable），参数类型兼容
+
+    // 关键：重写父类的 Serializable 参数版 getById，而非自定义 Long 参数版
     @Override
-    public Pet getById(Serializable petId) {
-        Integer id = (Integer) petId;
-        Pet pet = baseMapper.selectById(id);
-        if (pet == null) {
-            throw new NullPointerException("宠物不存在"); // 主动抛异常，让全局处理器捕获
+    public Pet getById(Serializable id) {
+        // 安全转换：无论传 Integer/Long，都转为 Long 后查询
+        Long petId = null;
+        if (id instanceof Long) {
+            petId = (Long) id;
+        } else if (id instanceof Integer) {
+            petId = ((Integer) id).longValue(); // Integer 转 Long，避免强转报错
         }
-        return pet;
+        // 调用 baseMapper 查询，确保参数是 Long 类型
+        return petId != null ? baseMapper.selectById(petId) : null;
     }
 }

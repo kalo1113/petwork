@@ -51,6 +51,11 @@ const routes = [
     name: 'UserOrder',
     component: () => import('../views/user/my/MyOrder.vue')
   },
+    {
+    path: '/user/claim',
+    name: 'UserClaim',
+    component: () => import('../views/user/my/Claim.vue')
+  },
 ]
 
 const router = createRouter({

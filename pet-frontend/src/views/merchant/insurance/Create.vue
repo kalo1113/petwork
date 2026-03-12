@@ -285,7 +285,6 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import axios from 'axios'
 
-// ========== 替换为你的实际接口地址 ==========
 const BASE_URL = '/insurance' // 后端接口前缀，根据实际配置调整
 
 // 表单引用

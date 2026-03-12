@@ -149,8 +149,10 @@
             </div>
             <!-- 权益操作按钮 -->
             <div class="benefit-actions">
-              <button class="btn mini-btn" @click="handleBenefitDetail(benefit)">查看详情</button>
-              <button class="btn mini-btn primary" v-if="benefit.status === '有效'" @click="handleUseBenefit(benefit)">使用权益</button>
+              <button class="btn mini-btn" @click="handleBenefitDetail(benefit)">查看保单</button>
+              <div class="insurance-actions">
+                <button class="btn mini-btn" @click="handleClaimDetail(benefit)">申请理赔</button>
+              </div>
             </div>
           </div>
         </div>
@@ -312,8 +314,6 @@ const formatDate = (dateStr) => {
   }
 }
 
-
-
 // 保险权益操作函数
 const handleBenefitDetail = (benefit) => {
   if (!userInfo.value.isLogin) {
@@ -330,6 +330,24 @@ const handleBenefitDetail = (benefit) => {
   }).catch(err => {
     console.error('跳转权益详情页失败：', err)
     ElMessage.error('页面跳转失败，请重试')
+  })
+}
+
+// 申请理赔（跳转到理赔页，并把订单ID带过去）
+const handleClaimDetail = (benefit) => {
+  // 从权益对象中取出保险订单ID
+  const orderId = benefit?.originalData?.insuranceOrderId || benefit?.insuranceOrderId;
+  
+  if (!orderId) {
+    ElMessage.warning('订单信息异常，无法申请理赔')
+    return
+  }
+
+  router.push({
+    path: '/user/claim',
+    query: {
+      orderId: orderId // 现在传的是真正的保险订单ID
+    }
   })
 }
 
@@ -357,53 +375,55 @@ const getPetPurchasedInsurance = async (petId) => {
       const insuranceOrderId = benefit?.insuranceOrderId || benefit?.insurance_order_id; // 订单ID
       console.log(`【第四步】解析出保险ID：${insuranceId}，订单ID：${insuranceOrderId}`)
       
-      // 2. 查询保险名称（原有逻辑）
-      let realInsuranceName = "无";
+      // 2. 查询保险名称（移除默认值，直接取数据库数据）
+      let realInsuranceName = ""; // 初始化为空，不再设置默认值
       if (insuranceId) {
         try {
           const insuranceRes = await getInsuranceDetail(insuranceId);
-          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "无";
+          // 直接读取数据库返回的名称，无数据则为空
+          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "";
         } catch (e) {
           console.error(`【查询保险${insuranceId}名称失败】`, e);
+          realInsuranceName = ""; // 查询失败也置空
         }
       }
 
       // 3. 新增：查询订单表的状态
       let orderStatusNum = -1; // 默认-1（未查询到）
       let orderStatusText = "未知"; // 状态中文说明
-    if (insuranceOrderId) {
-  try {
-    console.log(`【第五步】调用订单详情接口，查询订单${insuranceOrderId}状态`)
-    const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
-    console.log(`【第六步】订单${insuranceOrderId}详情返回：`, orderRes)
-    console.log(`【关键校验】orderRes.data是否存在：`, !!orderRes.data);
-    console.log(`【关键校验】orderRes.data.orderStatus的值：`, orderRes.data?.orderStatus);
-    console.log(`【关键校验】orderRes.data.orderStatus类型：`, typeof orderRes.data?.orderStatus);
-    
-    // 终极精准解析：强制转数字 + 兜底
-    const rawStatus = orderRes.data?.orderStatus;
-orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
-    console.log(`【解析后】orderStatusNum：`, orderStatusNum);
-    
-    // 转换为中文状态
-    switch (orderStatusNum) {
-      case 0:
-        orderStatusText = "已支付";
-        break;
-      case 1:
-        orderStatusText = "已生效";
-        break;
-      case 2:
-        orderStatusText = "已取消";
-        break;
-      default:
-        orderStatusText = `未知状态(${orderStatusNum})`; // 显示具体数字，方便排查
-    }
-  } catch (e) {
-    console.error(`【查询订单${insuranceOrderId}状态失败】`, e);
-    orderStatusText = "查询失败";
-  }
-} else {
+      if (insuranceOrderId) {
+        try {
+          console.log(`【第五步】调用订单详情接口，查询订单${insuranceOrderId}状态`)
+          const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
+          console.log(`【第六步】订单${insuranceOrderId}详情返回：`, orderRes)
+          console.log(`【关键校验】orderRes.data是否存在：`, !!orderRes.data);
+          console.log(`【关键校验】orderRes.data.orderStatus的值：`, orderRes.data?.orderStatus);
+          console.log(`【关键校验】orderRes.data.orderStatus类型：`, typeof orderRes.data?.orderStatus);
+          
+          // 终极精准解析：强制转数字 + 兜底
+          const rawStatus = orderRes.data?.orderStatus;
+          orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
+          console.log(`【解析后】orderStatusNum：`, orderStatusNum);
+          
+          // 转换为中文状态
+          switch (orderStatusNum) {
+            case 0:
+              orderStatusText = "已支付";
+              break;
+            case 1:
+              orderStatusText = "已生效";
+              break;
+            case 2:
+              orderStatusText = "已取消";
+              break;
+            default:
+              orderStatusText = `未知状态(${orderStatusNum})`; // 显示具体数字，方便排查
+          }
+        } catch (e) {
+          console.error(`【查询订单${insuranceOrderId}状态失败】`, e);
+          orderStatusText = "查询失败";
+        }
+      } else {
         console.log(`【第五步】订单ID为空，跳过订单状态查询`)
       }
 
@@ -412,7 +432,7 @@ orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawSta
         '宠物ID': petId,
         '权益ID': benefit?.id || benefit?.benefitId || '无',
         '保险ID': insuranceId || '无',
-        '保险名称(真实)': realInsuranceName,
+        '保险名称(真实)': realInsuranceName || '无', // 空值显示"无"
         '订单ID': insuranceOrderId || '无',
         '订单状态(数字)': orderStatusNum,
         '订单状态(中文)': orderStatusText,
@@ -433,7 +453,7 @@ orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawSta
   }
 }
 
-// 2. 修复 getPetInsuranceBenefits 函数
+// 2. 修复 getPetInsuranceBenefits 函数（核心修改：移除虚拟默认值）
 const getPetInsuranceBenefits = async (petId) => {
   if (!petId || !userInfo.value.isLogin) {
     insuranceBenefits.value = []
@@ -447,15 +467,17 @@ const getPetInsuranceBenefits = async (petId) => {
     }
     const benefitList = []
     for (const benefit of res.data) {
-      // 1. 查询保险名称
+      // 1. 查询保险名称（移除默认值，仅读取数据库真实数据）
       const insuranceId = benefit?.insuranceId || benefit?.insurance_id;
-      let realInsuranceName = "宠物保障计划";
+      let realInsuranceName = ""; // 初始化为空，无默认值
       if (insuranceId) {
         try {
           const insuranceRes = await getInsuranceDetail(insuranceId);
-          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "宠物保障计划";
+          // 仅读取数据库返回的名称，无数据则为空
+          realInsuranceName = insuranceRes?.data?.insurance?.insuranceName || "";
         } catch (e) {
           console.error(`查询保险${insuranceId}名称失败`, e);
+          realInsuranceName = ""; // 查询失败也置空
         }
       }
 
@@ -463,34 +485,35 @@ const getPetInsuranceBenefits = async (petId) => {
       let orderStatusText = "未知";
       let orderStatusNum = -1; // 提前定义，初始值-1（未查询到）
       const insuranceOrderId = benefit?.insuranceOrderId || benefit?.insurance_order_id;
-     if (insuranceOrderId) {
-  try {
-    const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
-    // 终极精准解析
-    const rawStatus = orderRes.data?.orderStatus;
-orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
-    switch (orderStatusNum) {
-      case 0:
-        orderStatusText = "已支付";
-        break;
-      case 1:
-        orderStatusText = "已生效";
-        break;
-      case 2:
-        orderStatusText = "已取消";
-        break;
-      default:
-        orderStatusText = `未知状态(${orderStatusNum})`;
-    }
-  } catch (e) {
-    orderStatusText = "状态查询失败";
-  }
-}
+      if (insuranceOrderId) {
+        try {
+          const orderRes = await getInsuranceOrderDetail(insuranceOrderId);
+          // 终极精准解析
+          const rawStatus = orderRes.data?.orderStatus;
+          orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawStatus) : -1;
+          // 转换为中文状态
+          switch (orderStatusNum) {
+            case 0:
+              orderStatusText = "已支付";
+              break;
+            case 1:
+              orderStatusText = "已生效";
+              break;
+            case 2:
+              orderStatusText = "已取消";
+              break;
+            default:
+              orderStatusText = `未知状态(${orderStatusNum})`;
+          }
+        } catch (e) {
+          orderStatusText = "状态查询失败";
+        }
+      }
 
-      // 3. 组装页面展示数据（此时orderStatusNum已定义）
+      // 3. 组装页面展示数据（保险名称为空则显示"无"）
       benefitList.push({
         benefitId: benefit?.id || benefit?.benefitId || '',
-        insuranceName: realInsuranceName,
+        insuranceName: realInsuranceName || '无', // 数据库无数据则显示"无"
         status: orderStatusText, // 页面显示订单表的中文状态
         statusNum: orderStatusNum, // 现在能正常访问，不会报错
         startTime: formatDate(benefit?.createTime),
@@ -498,34 +521,20 @@ orderStatusNum = (rawStatus !== undefined && rawStatus !== null) ? Number(rawSta
         remainingSubsidy: Number(benefit?.monthlySubsidyBalance || benefit?.remainingInsuranceAmount || 0),
         coverage: benefit?.freeServiceRemaining 
           ? `${benefit.freeServiceRemaining}` 
-          : '宠物医疗、消费补贴等',
+          : '无', // 赠送服务为空显示"无"
         originalData: benefit || {}
       })
     }
-    insuranceBenefits.value = benefitList
+    // ✅ 核心修改：过滤掉无效的「无+未知状态(-1)」数据
+    insuranceBenefits.value = benefitList.filter(item => {
+      // 保留：有保险名称 或 状态不是-1的有效数据
+      return item.insuranceName !== '无' || item.statusNum !== -1
+    })
   } catch (err) {
     console.error('【获取宠物保险权益失败】', err)
     insuranceBenefits.value = []
     ElMessage.warning('获取宠物保障信息失败，将显示默认内容')
   }
-}
-
-const handleUseBenefit = (benefit) => {
-  if (!userInfo.value.isLogin) {
-    dialogVisible.value = true
-    return
-  }
-  router.push({
-    path: '/product-list',
-    query: { 
-      benefitId: benefit.benefitId, 
-      petId: currentPet.value.petId,
-      subsidy: benefit.remainingSubsidy
-    }
-  }).catch(err => {
-    console.error('跳转使用权益页面失败：', err)
-    ElMessage.error('页面跳转失败，请重试')
-  })
 }
 
 // 清空错误提示
@@ -597,7 +606,6 @@ const calculatePetAge = (birthday) => {
 }
 
 // 监听宠物切换
-// 监听宠物切换
 watch(
   () => currentPet.value.petId,
   async (petId) => {
@@ -609,7 +617,6 @@ watch(
       insuranceBenefits.value = []
     }
   }
-
 )
 
 // 登录/注册提交
@@ -669,7 +676,13 @@ const handleEditClick = () => {
     ElMessage.warning('请先登录后再进入个人设置！')
     return
   }
-  router.push({ path: '/user/setting' }).then(() => {
+  router.push({ 
+    path: '/user/setting' ,
+    query: {
+      userId: userInfo.value.userId,
+      type: 'edit'
+    }
+  }).then(() => {
     ElMessage.info('正在跳转到个人设置页面')
   }).catch(err => {
     console.error('路由跳转失败：', err)

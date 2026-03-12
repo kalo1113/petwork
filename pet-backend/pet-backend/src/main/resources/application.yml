@@ -48,8 +48,11 @@ upload:
 
   # 保险图片：access-path改为数据库里的/insurance-img/
   insurance-img-path: classpath:/static/images/insurance-img/
-  insurance-img-access-path: /insurance-img/  # 与数据库路径一致
+  insurance-img-access-path: /insurance-img/
 
+  # 理赔图片：access-path改为数据库里的/claim-img/
+  claim-img-path: classpath:/static/images/claim-img/
+  claim-img-access-path: /claim-img/
 
 # MyBatis-Plus 配置（保持不变）
 mybatis-plus:

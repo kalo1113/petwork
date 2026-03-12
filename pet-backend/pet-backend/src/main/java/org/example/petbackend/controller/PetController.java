@@ -259,7 +259,7 @@ public class PetController {
         log.info("开始更新宠物信息，接收参数：{}", pet);
 
         // 1. 参数合法性校验
-        Integer petId = pet.getPetId();
+        Integer petId = Math.toIntExact(pet.getPetId());
         if (petId == null || petId <= 0) {
             log.warn("更新宠物信息失败：宠物ID不合法，petId={}", petId);
             return Result.fail("更新失败：宠物ID必须为正整数");

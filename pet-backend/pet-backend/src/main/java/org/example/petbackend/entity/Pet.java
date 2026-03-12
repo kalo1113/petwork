@@ -14,10 +14,10 @@ import java.time.LocalDateTime;
 @Data // Lombok注解，自动生成getter/setter方法
 public class Pet {
     @TableId(type = IdType.AUTO)
-    private Integer petId; // 主键，自增
+    private Long petId; // 主键，自增
 
     @NotNull(message = "用户ID不能为空")
-    private Integer userId; // 关联用户ID，非空
+    private Long userId; // 关联用户ID，非空
 
     @NotBlank(message = "宠物名称不能为空")
     private String petName; // 宠物名称，非空

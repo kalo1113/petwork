@@ -392,7 +392,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 // 修复：统一导入Element Plus组件（避免漏注册）
 import { 
   ElMessage, ElLoading, ElForm, ElDialog, ElButton, 
@@ -400,7 +400,6 @@ import {
   ElCascader, ElIcon 
 } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
 import axios from 'axios'
 import defaultAvatar from '@/assets/images/我的图标/默认头像.svg'
 // 导入地址接口
@@ -409,9 +408,10 @@ import { getReceiverAddressList, addReceiverAddress, updateReceiverAddress, dele
 import { BASE_URL } from '@/config/index.js'
 // 正确导入省市区数据
 import { areaOptions } from '@/utils/address.js'
-
-// 初始化路由实例
+import { useRouter, useRoute } from 'vue-router'
+// 初始化路由和路由参数
 const router = useRouter()
+const route = useRoute() // 新增：获取当前路由参数
 
 // ========== 状态管理 ==========
 // 用户信息
@@ -474,7 +474,6 @@ const loginForm = reactive({
   email: '',
   password: ''
 })
-
 // ========== 修复：简化表单校验规则（避免复杂逻辑导致报错） ==========
 const nicknameRules = ref({
   username: [
@@ -536,179 +535,263 @@ const addressRules = ref({
   ]
 })
 
-// ========== 生命周期 ==========
-onMounted(() => {
-  initUserInfo()
-  initOtherAccounts()
-})
+// ========== 新增：通用userId类型转换与校验方法 ==========
+/** 
+ * 转换userId为数字类型，返回null表示无效
+ * @param {string|number} userId - 待转换的用户ID
+ * @returns {number|null} 有效数字类型userId或null
+ */
+const convertToValidUserId = (userId) => {
+  if (!userId) return null;
+  // 去除首尾空格并转为字符串
+  const userIdStr = String(userId).trim();
+  // 校验是否为纯数字
+  if (!/^\d+$/.test(userIdStr)) {
+    ElMessage.error('用户ID格式错误：必须为数字');
+    return null;
+  }
+  // 转换为数字
+  const userIdNum = Number(userIdStr);
+  // 校验有效性
+  if (userIdNum <= 0) {
+    ElMessage.error('用户ID必须大于0');
+    return null;
+  }
+  return userIdNum;
+};
 
-// ========== 初始化方法 ==========
-/** 初始化当前登录用户信息 */
-/** 初始化当前登录用户信息 */
+// ========== 新增：根据userId获取用户详情接口（修复类型转换） ==========
+/** 根据userId获取用户详情 */
+const getUserDetail = async (userId) => {
+  // 1. 先转换并校验userId
+  const validUserId = convertToValidUserId(userId);
+  if (!validUserId) return;
+
+  try {
+    // 修复：调用后端标准的/user/{userId}接口（而非自定义的/detail）
+    const res = await axios.get(`${BASE_URL}/user/${validUserId}`);
+    if (res.data.code === 200) {
+      const userData = res.data.data;
+      // 复用原有头像路径处理逻辑（后端已拼好URL，简化处理）
+      let avatarUrl = userData.avatarUrl || defaultAvatar;
+      if (avatarUrl && !avatarUrl.startsWith('http')) {
+        avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`;
+      }
+      
+      // 更新用户信息（确保userId为数字类型）
+      userInfo.value = {
+        isLogin: true,
+        userId: validUserId,
+        username: userData.username || '',
+        email: userData.email || '',
+        avatarUrl: avatarUrl
+      };
+      // 同步到昵称表单
+      nicknameForm.username = userInfo.value.username;
+      // 加载该用户的地址列表
+      loadAddressList();
+      // 可选：更新本地缓存（存储数字类型userId）
+      localStorage.setItem('userData', JSON.stringify({
+        userId: validUserId,
+        username: userData.username,
+        email: userData.email,
+        avatarUrl: userData.avatarUrl || ''
+      }));
+    } else {
+      ElMessage.error(res.data.msg || '获取用户信息失败');
+    }
+  } catch (err) {
+    console.error('获取用户详情失败：', err);
+    // 更精准的错误提示
+    if (err.response?.status === 404) {
+      ElMessage.error('用户不存在');
+    } else {
+      ElMessage.error('用户信息加载失败，请检查接口是否可用');
+    }
+  }
+};
+
+// ========== 初始化方法（重构：强化类型校验） ==========
+/** 初始化当前登录用户信息（重构） */
 const initUserInfo = () => {
   try {
-    const userData = localStorage.getItem('userData')
+    // 第一步：优先获取URL中的userId参数并转换
+    const urlUserId = route.query.userId || '';
+    const validUrlUserId = convertToValidUserId(urlUserId);
+    if (validUrlUserId) {
+      getUserDetail(validUrlUserId);
+      return;
+    }
+
+    // 第二步：URL中无userId，读取本地缓存
+    const userData = localStorage.getItem('userData');
     if (userData) {
-      const parsed = JSON.parse(userData)
+      const parsed = JSON.parse(userData);
+      // 转换缓存中的userId为数字
+      const validCacheUserId = convertToValidUserId(parsed.userId);
+      if (!validCacheUserId) {
+        localStorage.removeItem('userData'); // 缓存无效，清空
+        return;
+      }
+
       // 核心修复：智能处理头像路径，去重+兼容
-      let avatarUrl = parsed.avatarUrl || ''
+      let avatarUrl = parsed.avatarUrl || '';
       if (avatarUrl) {
         if (avatarUrl.startsWith('http')) {
           // 完整URL：先去重重复前缀，再替换旧前缀
-          avatarUrl = avatarUrl.replace(/\/user-img\/user-img\//, '/user-img/')
-          avatarUrl = avatarUrl.replace('/avatar/', '/user-img/')
+          avatarUrl = avatarUrl.replace(/\/user-img\/user-img\//, '/user-img/');
+          avatarUrl = avatarUrl.replace('/avatar/', '/user-img/');
         } else if (avatarUrl.startsWith('/user-img/')) {
           // 带前缀的路径：直接拼接域名
-          avatarUrl = `${BASE_URL}${avatarUrl}`
+          avatarUrl = `${BASE_URL}${avatarUrl}`;
         } else {
           // 纯文件名：拼接前缀
-          avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`
+          avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`;
         }
       } else {
-        avatarUrl = defaultAvatar
+        avatarUrl = defaultAvatar;
       }
 
+      // 更新用户信息（确保userId为数字）
       userInfo.value = {
         isLogin: true,
-        userId: parsed.userId || '',
+        userId: validCacheUserId,
         username: parsed.username || '',
         email: parsed.email || '',
         avatarUrl: avatarUrl // 使用修复后的路径
-      }
-      nicknameForm.username = userInfo.value.username
+      };
+      nicknameForm.username = userInfo.value.username;
       // 初始化地址
-      loadAddressList()
+      loadAddressList();
     }
   } catch (err) {
-    console.error('初始化用户信息失败：', err)
-    ElMessage.error('用户信息加载异常')
+    console.error('初始化用户信息失败：', err);
+    ElMessage.error('用户信息加载异常');
   }
-}
+};
 
-/** 初始化其他账号列表 */
-const initOtherAccounts = () => {
-  try {
-    const accountList = localStorage.getItem('accountList')
-    if (accountList) {
-      otherAccounts.value = JSON.parse(accountList).filter(item => item.userId !== userInfo.value.userId)
-    }
-  } catch (err) {
-    console.error('初始化账号列表失败：', err)
-  }
-}
-
-/** 加载地址列表（修复：增加错误捕获） */
+/** 加载地址列表（修复：兼容URL参数中的userId，强制数字类型） */
 const loadAddressList = async () => {
-  if (!userInfo.value.userId) return
+  // 优先使用用户信息中的数字userId，兜底用URL参数并转换
+  const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+  if (!userId) return;
+  
   try {
-    const res = await getReceiverAddressList(userInfo.value.userId)
-    addressList.value = res.data || [] 
-    defaultAddress.value = res.data?.find(item => item.is_default === 1) || null
-    defaultAddressId.value = defaultAddress.value?.id || ''
+    const res = await getReceiverAddressList(userId);
+    addressList.value = res.data || [];
+    defaultAddress.value = res.data?.find(item => item.is_default === 1) || null;
+    defaultAddressId.value = defaultAddress.value?.id || '';
   } catch (err) {
-    console.warn('地址加载失败：', err)
-    addressList.value = [] 
-    ElMessage.warning('暂无收货地址')
+    console.warn('地址加载失败：', err);
+    addressList.value = [];
+    ElMessage.warning('暂无收货地址');
   }
-}
+};
 
-// ========== 地址相关方法 ==========
+// ========== 地址相关方法（全量修复userId类型） ==========
 /** 打开地址弹窗 */
 const openAddressDialog = () => {
-  loadAddressList()
-  addressDialogVisible.value = true
-}
+  loadAddressList();
+  addressDialogVisible.value = true;
+};
 
 /** 切换管理模式 */
 const toggleManageMode = () => {
-  isManageMode.value = !isManageMode.value
-  selectedAddressIds.value = []
-  selectAll.value = false
-}
+  isManageMode.value = !isManageMode.value;
+  selectedAddressIds.value = [];
+  selectAll.value = false;
+};
 
 /** 全选/取消全选 */
 const toggleSelectAll = () => {
   selectedAddressIds.value = selectAll.value
     ? addressList.value.map(item => item.id)
-    : []
-}
+    : [];
+};
 
-/** 设置默认地址 */
+/** 设置默认地址（修复userId类型） */
 const setDefaultAddress = async (id) => {
+  const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+  if (!userId) return;
+  
   try {
     await updateReceiverAddress({
       id,
-      userId: userInfo.value.userId,
+      userId: userId,
       isDefault: 1
-    })
-    loadAddressList()
-    ElMessage.success('已设置为默认地址')
+    });
+    loadAddressList();
+    ElMessage.success('已设置为默认地址');
   } catch (err) {
-    console.error('设置默认地址失败：', err)
-    ElMessage.error('设置默认地址失败')
+    console.error('设置默认地址失败：', err);
+    ElMessage.error('设置默认地址失败');
   }
-}
+};
 
 /** 打开新增地址弹窗 */
 const openAddAddressDialog = () => {
-  resetAddressForm()
-  isEditAddress.value = false
-  addAddressDialogVisible.value = true
-}
+  resetAddressForm();
+  isEditAddress.value = false;
+  addAddressDialogVisible.value = true;
+};
 
 /** 打开编辑地址弹窗 */
 const openEditAddressDialog = (item) => {
-  resetAddressForm()
-  isEditAddress.value = true
+  resetAddressForm();
+  isEditAddress.value = true;
   // 填充表单数据
-  addressForm.id = item.id
-  addressForm.receiverName = item.receiverName
-  addressForm.receiverPhone = item.receiverPhone
-  addressForm.receiverProvince = item.receiverProvince
-  addressForm.receiverCity = item.receiverCity
-  addressForm.receiverDistrict = item.receiverDistrict
-  addressForm.receiverDetailAddress = item.receiverDetailAddress
-  addressForm.tag = item.tag || '家'
-  addressForm.isDefault = item.isDefault || 0
+  addressForm.id = item.id;
+  addressForm.receiverName = item.receiverName;
+  addressForm.receiverPhone = item.receiverPhone;
+  addressForm.receiverProvince = item.receiverProvince;
+  addressForm.receiverCity = item.receiverCity;
+  addressForm.receiverDistrict = item.receiverDistrict;
+  addressForm.receiverDetailAddress = item.receiverDetailAddress;
+  addressForm.tag = item.tag || '家';
+  addressForm.isDefault = item.isDefault || 0;
   // 回显Cascader（修复：直接绑定名称数组）
-  addressForm.area = [item.receiverProvince, item.receiverCity, item.receiverDistrict]
-  addAddressDialogVisible.value = true
-}
+  addressForm.area = [item.receiverProvince, item.receiverCity, item.receiverDistrict];
+  addAddressDialogVisible.value = true;
+};
 
 /** 重置地址表单 */
 const resetAddressForm = () => {
-  addressForm.id = ''
-  addressForm.receiverName = ''
-  addressForm.receiverPhone = ''
-  addressForm.receiverProvince = ''
-  addressForm.receiverCity = ''
-  addressForm.receiverDistrict = ''
-  addressForm.receiverDetailAddress = ''
-  addressForm.tag = '家'
-  addressForm.isDefault = 0
-  addressForm.area = []
+  addressForm.id = '';
+  addressForm.receiverName = '';
+  addressForm.receiverPhone = '';
+  addressForm.receiverProvince = '';
+  addressForm.receiverCity = '';
+  addressForm.receiverDistrict = '';
+  addressForm.receiverDetailAddress = '';
+  addressForm.tag = '家';
+  addressForm.isDefault = 0;
+  addressForm.area = [];
   if (addressFormRef.value) {
-    addressFormRef.value.resetFields()
+    addressFormRef.value.resetFields();
   }
-}
+};
 
 /** Cascader选择事件（简化逻辑） */
 const handleAreaChange = (val) => {
   if (val && val.length === 3) {
-    addressForm.receiverProvince = val[0]
-    addressForm.receiverCity = val[1]
-    addressForm.receiverDistrict = val[2]
+    addressForm.receiverProvince = val[0];
+    addressForm.receiverCity = val[1];
+    addressForm.receiverDistrict = val[2];
   }
-}
+};
 
-/** 保存地址（修复：增加校验成功后的逻辑） */
+/** 保存地址（修复：强制userId为数字类型） */
 const saveAddress = async () => {
   try {
-    const valid = await addressFormRef.value.validate()
-    if (!valid) return
+    const valid = await addressFormRef.value.validate();
+    if (!valid) return;
+
+    // 转换并校验userId
+    const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+    if (!userId) return;
 
     const addressData = {
-      userId: userInfo.value.userId,
+      userId: userId,
       receiverName: addressForm.receiverName,
       receiverPhone: addressForm.receiverPhone,
       receiverProvince: addressForm.receiverProvince,
@@ -717,357 +800,401 @@ const saveAddress = async () => {
       receiverDetailAddress: addressForm.receiverDetailAddress,
       tag: addressForm.tag,
       isDefault: addressForm.isDefault ? 1 : 0
-    }
+    };
 
     if (isEditAddress.value) {
-      addressData.id = addressForm.id
-      await updateReceiverAddress(addressData)
-      ElMessage.success('地址编辑成功')
+      addressData.id = addressForm.id;
+      await updateReceiverAddress(addressData);
+      ElMessage.success('地址编辑成功');
     } else {
-      await addReceiverAddress(addressData)
-      ElMessage.success('地址添加成功')
+      await addReceiverAddress(addressData);
+      ElMessage.success('地址添加成功');
     }
 
-    addAddressDialogVisible.value = false
-    loadAddressList()
+    addAddressDialogVisible.value = false;
+    loadAddressList();
   } catch (err) {
-    console.error('保存地址失败：', err)
-    ElMessage.error(isEditAddress.value ? '地址编辑失败' : '地址添加失败')
+    console.error('保存地址失败：', err);
+    ElMessage.error(isEditAddress.value ? '地址编辑失败' : '地址添加失败');
   }
-}
+};
 
-/** 删除单个地址 */
+/** 删除单个地址（修复：强制userId为数字类型） */
 const deleteAddress = async (id) => {
+  const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+  if (!userId) return;
+  
   try {
-    await deleteReceiverAddress(id, userInfo.value.userId)
-    loadAddressList()
-    ElMessage.success('地址删除成功')
+    await deleteReceiverAddress(id, userId);
+    loadAddressList();
+    ElMessage.success('地址删除成功');
   } catch (err) {
-    console.error('删除地址失败：', err)
-    ElMessage.error('地址删除失败')
+    console.error('删除地址失败：', err);
+    ElMessage.error('地址删除失败');
   }
-}
+};
 
-/** 删除选中地址 */
+/** 删除选中地址（修复：强制userId为数字类型） */
 const deleteSelectedAddresses = async () => {
   if (selectedAddressIds.value.length === 0) {
-    return ElMessage.warning('请选择要删除的地址')
+    return ElMessage.warning('请选择要删除的地址');
   }
+
+  // 转换并校验userId
+  const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+  if (!userId) return;
 
   try {
     for (const id of selectedAddressIds.value) {
-      await deleteReceiverAddress(id, userInfo.value.userId)
+      await deleteReceiverAddress(id, userId);
     }
-    loadAddressList()
-    selectedAddressIds.value = []
-    selectAll.value = false
-    ElMessage.success('选中地址已删除')
+    loadAddressList();
+    selectedAddressIds.value = [];
+    selectAll.value = false;
+    ElMessage.success('选中地址已删除');
   } catch (err) {
-    console.error('删除选中地址失败：', err)
-    ElMessage.error('删除地址失败')
+    console.error('删除选中地址失败：', err);
+    ElMessage.error('删除地址失败');
   }
-}
+};
 
 /** 复制地址 */
 const copyAddress = (item) => {
   try {
-    const addressText = `${item.receiverName} ${item.receiverPhone}\n${item.receiverProvince}${item.receiverCity}${item.receiverDistrict}${item.receiverDetailAddress}`
+    const addressText = `${item.receiverName} ${item.receiverPhone}\n${item.receiverProvince}${item.receiverCity}${item.receiverDistrict}${item.receiverDetailAddress}`;
     navigator.clipboard.writeText(addressText).then(() => {
-      ElMessage.success('地址已复制到剪贴板')
-    })
+      ElMessage.success('地址已复制到剪贴板');
+    });
   } catch (err) {
-    console.error('复制地址失败：', err)
-    ElMessage.error('复制地址失败')
+    console.error('复制地址失败：', err);
+    ElMessage.error('复制地址失败');
   }
-}
+};
 
-// ========== 其他事件处理 ==========
+// ========== 其他事件处理（全量修复userId类型） ==========
 /** 返回上一页 */
 const handleBack = () => {
   try {
     router.push('/my').catch(err => {
-      console.error('跳转个人中心失败：', err)
-      ElMessage.error('返回失败，请重试')
-    })
+      console.error('跳转个人中心失败：', err);
+      ElMessage.error('返回失败，请重试');
+    });
   } catch (err) {
-    console.error('返回失败：', err)
+    console.error('返回失败：', err);
   }
-}
+};
 
-/** 头像上传处理（完整修复：增加错误详情、兼容不同响应格式） */
+/** 头像上传处理（完整修复：增加userId类型转换） */
 const handleAvatarUpload = async (e) => {
-  const file = e.target.files[0]
-  if (!file) return
+  const file = e.target.files[0];
+  if (!file) return;
 
   // 1. 文件校验
   if (file.size > 10 * 1024 * 1024) {
-    return ElMessage.error('头像文件大小不能超过10MB')
+    return ElMessage.error('头像文件大小不能超过10MB');
   }
-  const acceptTypes = ['image/jpeg', 'image/png', 'image/gif']
+  const acceptTypes = ['image/jpeg', 'image/png', 'image/gif'];
   if (!acceptTypes.includes(file.type)) {
-    return ElMessage.error('仅支持jpg/png/gif格式的头像')
+    return ElMessage.error('仅支持jpg/png/gif格式的头像');
   }
 
-  // 2. 显示加载状态
+  // 2. 转换并校验userId
+  const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+  if (!userId) return;
+
+  // 3. 显示加载状态
   const loading = ElLoading.service({
     lock: true,
     text: '头像上传中...',
     background: 'rgba(0, 0, 0, 0.7)'
-  })
+  });
 
   try {
-    // 3. 构建表单数据（保留原始文件名）
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('userId', userInfo.value.userId)
+    // 4. 构建表单数据（传递数字类型userId）
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('userId', userId);
 
-    // 4. 调用后端接口（增加超时、跨域配置）
+    // 5. 调用后端接口（增加超时、跨域配置）
     const res = await axios.post(`${BASE_URL}/user/uploadAvatar`, formData, {
       headers: { 
-        'Content-Type': 'multipart/form-data',
-        'Access-Control-Allow-Origin': '*' // 解决跨域问题
+        'Content-Type': 'multipart/form-data'
+        // 跨域配置移到后端CORS，前端无需设置
       },
       transformRequest: [(data) => data],
       timeout: 30000, // 超时时间30秒
       withCredentials: true // 携带cookie（如果需要）
-    })
+    });
 
-    // 5. 处理响应（兼容不同的返回格式）
-    loading.close()
+    // 6. 处理响应（兼容不同的返回格式）
+    loading.close();
     if (res.data && res.data.code === 200) {
-      const fileName = res.data.data || res.data.fileName || res.data.result
+      const fileName = res.data.data || res.data.fileName || res.data.result;
       if (!fileName) {
-        return ElMessage.error('上传成功但未获取到头像文件名')
+        return ElMessage.error('上传成功但未获取到头像文件名');
       }
       
       // 核心修复：智能拼接路径，避免重复前缀
-      let finalAvatarUrl = ''
+      let finalAvatarUrl = '';
       if (fileName.startsWith('/user-img/')) {
         // 后端返回带前缀，直接拼接域名
-        finalAvatarUrl = `${BASE_URL}${fileName}`
+        finalAvatarUrl = `${BASE_URL}${fileName}`;
       } else {
         // 纯文件名，手动拼接前缀
-        finalAvatarUrl = `${BASE_URL}/user-img/${fileName}`
+        finalAvatarUrl = `${BASE_URL}/user-img/${fileName}`;
       }
-      userInfo.value.avatarUrl = finalAvatarUrl
+      userInfo.value.avatarUrl = finalAvatarUrl;
       
       // 核心修复：缓存只存纯文件名，移除前缀
-      let cacheAvatarUrl = fileName
+      let cacheAvatarUrl = fileName;
       if (cacheAvatarUrl.startsWith('/user-img/')) {
-        cacheAvatarUrl = cacheAvatarUrl.replace('/user-img/', '')
+        cacheAvatarUrl = cacheAvatarUrl.replace('/user-img/', '');
       }
-      // 更新本地缓存
+      // 更新本地缓存（确保userId为数字）
+      const currentUserData = JSON.parse(localStorage.getItem('userData') || '{}');
       localStorage.setItem('userData', JSON.stringify({
-        ...JSON.parse(localStorage.getItem('userData')),
-        avatarUrl: cacheAvatarUrl // 仅存纯文件名
-      }))
-      ElMessage.success('头像上传成功')
+        ...currentUserData,
+        avatarUrl: cacheAvatarUrl, // 仅存纯文件名
+        userId: userId // 强制存储数字类型
+      }));
+      ElMessage.success('头像上传成功');
     } else {
-      ElMessage.error(res.data?.msg || '头像上传失败（后端返回非200状态）')
+      ElMessage.error(res.data?.msg || '头像上传失败（后端返回非200状态）');
     }
   } catch (err) {
-    loading.close()
+    loading.close();
     // 详细打印错误信息，方便排查
     console.error('头像上传失败详情：', {
       url: `${BASE_URL}/user/uploadAvatar`,
       error: err.message,
       status: err.response?.status,
       data: err.response?.data
-    })
+    });
     // 分场景提示错误
     if (err.message.includes('timeout')) {
-      ElMessage.error('头像上传超时，请检查网络或重试')
+      ElMessage.error('头像上传超时，请检查网络或重试');
     } else if (err.message.includes('404')) {
-      ElMessage.error('上传接口不存在，请检查后端接口地址是否正确')
+      ElMessage.error('上传接口不存在，请检查后端接口地址是否正确');
     } else if (err.message.includes('500')) {
-      ElMessage.error('服务器内部错误，请联系管理员')
+      ElMessage.error('服务器内部错误，请联系管理员');
     } else {
-      ElMessage.error('头像上传失败，请检查网络或联系管理员')
+      ElMessage.error('头像上传失败，请检查网络或联系管理员');
     }
   }
-}
+};
 
 /** 打开昵称编辑弹窗 */
 const openNicknameEdit = () => {
-  nicknameForm.username = userInfo.value.username || '默认昵称'
+  nicknameForm.username = userInfo.value.username || '默认昵称';
   setTimeout(() => {
-    nicknameDialogVisible.value = true
-  }, 0)
-}
+    nicknameDialogVisible.value = true;
+  }, 0);
+};
 
-/** 保存昵称修改 */
+/** 保存昵称修改（修复：强制userId为数字类型） */
 const saveNickname = async () => {
   try {
-    const valid = await nicknameFormRef.value.validate()
-    if (!valid) return
+    const valid = await nicknameFormRef.value.validate();
+    if (!valid) return;
+
+    // 转换并校验userId
+    const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+    if (!userId) return;
 
     const res = await axios.post(`${BASE_URL}/user/updateNickname`, {
-      userId: userInfo.value.userId,
+      userId: userId, // 传递数字类型
       username: nicknameForm.username
-    })
+    });
 
     if (res.data.code === 200) {
-      userInfo.value.username = nicknameForm.username
+      userInfo.value.username = nicknameForm.username;
+      const currentUserData = JSON.parse(localStorage.getItem('userData') || '{}');
       localStorage.setItem('userData', JSON.stringify({
-        ...JSON.parse(localStorage.getItem('userData')),
-        username: nicknameForm.username
-      }))
-      nicknameDialogVisible.value = false
-      ElMessage.success('昵称修改成功')
+        ...currentUserData,
+        username: nicknameForm.username,
+        userId: userId // 确保缓存中是数字
+      }));
+      nicknameDialogVisible.value = false;
+      ElMessage.success('昵称修改成功');
     } else {
-      ElMessage.error(res.data.msg || '昵称修改失败')
+      ElMessage.error(res.data.msg || '昵称修改失败');
     }
   } catch (err) {
-    console.error('昵称修改失败：', err)
-    ElMessage.error('昵称修改失败，请检查网络')
+    console.error('昵称修改失败：', err);
+    ElMessage.error('昵称修改失败，请检查网络');
   }
-}
+};
 
 /** 打开密码修改弹窗 */
 const openPwdEdit = () => {
-  pwdForm.oldPwd = ''
-  pwdForm.newPwd = ''
-  pwdForm.confirmPwd = ''
-  pwdDialogVisible.value = true
-}
+  pwdForm.oldPwd = '';
+  pwdForm.newPwd = '';
+  pwdForm.confirmPwd = '';
+  pwdDialogVisible.value = true;
+};
 
-/** 保存密码修改 */
+/** 保存密码修改（修复：强制userId为数字类型） */
 const savePassword = async () => {
   try {
-    const valid = await pwdFormRef.value.validate()
-    if (!valid) return
+    const valid = await pwdFormRef.value.validate();
+    if (!valid) return;
+
+    // 转换并校验userId
+    const userId = convertToValidUserId(userInfo.value.userId || route.query.userId);
+    if (!userId) return;
 
     const res = await axios.post(`${BASE_URL}/user/updatePassword`, {
-      userId: userInfo.value.userId,
+      userId: userId, // 传递数字类型
       oldPassword: pwdForm.oldPwd,
       newPassword: pwdForm.newPwd
-    })
+    });
 
     if (res.data.code === 200) {
-      pwdDialogVisible.value = false
-      ElMessage.success('密码修改成功，请重新登录')
-      handleLogout()
+      pwdDialogVisible.value = false;
+      ElMessage.success('密码修改成功，请重新登录');
+      handleLogout();
     } else {
-      ElMessage.error(res.data.msg || '密码修改失败（原密码错误）')
+      ElMessage.error(res.data.msg || '密码修改失败（原密码错误）');
     }
   } catch (err) {
-    console.error('密码修改失败：', err)
-    ElMessage.error('密码修改失败，系统异常')
+    console.error('密码修改失败：', err);
+    ElMessage.error('密码修改失败，系统异常');
   }
-}
+};
 
 /** 打开切换账号弹窗 */
 const openSwitchAccount = () => {
-  switchAccountDialogVisible.value = true
-}
+  switchAccountDialogVisible.value = true;
+};
 
-/** 切换到指定账号（核心修复：强制替换头像路径） */
+/** 切换到指定账号（核心修复：强制userId为数字类型） */
 const switchToAccount = (account) => {
   try {
+    // 转换账号的userId为数字
+    const validUserId = convertToValidUserId(account.userId);
+    if (!validUserId) return;
+
     // 核心修复：处理账号头像路径
-    let avatarUrl = account.avatarUrl || ''
+    let avatarUrl = account.avatarUrl || '';
     if (avatarUrl) {
       if (avatarUrl.startsWith('http')) {
-        avatarUrl = avatarUrl.replace('/avatar/', '/user-img/')
+        avatarUrl = avatarUrl.replace('/avatar/', '/user-img/');
       } else {
-        avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`
+        avatarUrl = `${BASE_URL}/user-img/${encodeURIComponent(avatarUrl)}`;
       }
     } else {
-      avatarUrl = defaultAvatar
+      avatarUrl = defaultAvatar;
     }
 
-    // 更新缓存（只存文件名）
+    // 更新缓存（只存文件名，userId为数字）
     const accountData = {
       ...account,
+      userId: validUserId, // 强制数字类型
       avatarUrl: account.avatarUrl && !account.avatarUrl.startsWith('http') 
         ? account.avatarUrl 
         : (account.avatarUrl || '')
-    }
-    localStorage.setItem('userData', JSON.stringify(accountData))
+    };
+    localStorage.setItem('userData', JSON.stringify(accountData));
     
     userInfo.value = {
       isLogin: true,
-      userId: account.userId,
+      userId: validUserId,
       username: account.username,
       email: account.email,
       avatarUrl: avatarUrl
-    }
-    switchAccountDialogVisible.value = false
-    ElMessage.success(`已切换到账号：${account.username}`)
-    window.location.reload()
+    };
+    switchAccountDialogVisible.value = false;
+    ElMessage.success(`已切换到账号：${account.username}`);
+    window.location.reload();
   } catch (err) {
-    console.error('切换账号失败：', err)
-    ElMessage.error('切换账号失败')
+    console.error('切换账号失败：', err);
+    ElMessage.error('切换账号失败');
   }
-}
+};
 
 /** 打开添加账号登录弹窗 */
 const handleAddAccount = () => {
-  switchAccountDialogVisible.value = false
-  loginDialogVisible.value = true
-}
+  switchAccountDialogVisible.value = false;
+  loginDialogVisible.value = true;
+};
 
 /** 登录（添加账号） */
 const handleLogin = async () => {
   try {
-    const valid = await loginFormRef.value.validate()
-    if (!valid) return
+    const valid = await loginFormRef.value.validate();
+    if (!valid) return;
 
     const res = await axios.post(`${BASE_URL}/user/my`, {
       email: loginForm.email,
       password: loginForm.password
-    })
+    });
 
     if (res.data.code === 200) {
-      const newAccount = res.data.data
-      // 修复：缓存只存文件名，不存完整URL
-      newAccount.avatarUrl = newAccount.avatarUrl || ''
+      const newAccount = res.data.data;
+      // 转换userId为数字
+      const validUserId = convertToValidUserId(newAccount.userId);
+      if (!validUserId) return;
+
+      // 修复：缓存只存文件名，不存完整URL，userId为数字
+      newAccount.avatarUrl = newAccount.avatarUrl || '';
+      newAccount.userId = validUserId;
 
       // 保存到账号列表
-      const accountList = JSON.parse(localStorage.getItem('accountList') || '[]')
-      if (!accountList.some(item => item.userId === newAccount.userId)) {
-        accountList.push(newAccount)
-        localStorage.setItem('accountList', JSON.stringify(accountList))
+      const accountList = JSON.parse(localStorage.getItem('accountList') || '[]');
+      if (!accountList.some(item => convertToValidUserId(item.userId) === validUserId)) {
+        accountList.push(newAccount);
+        localStorage.setItem('accountList', JSON.stringify(accountList));
       }
       // 设置为当前登录账号
-      localStorage.setItem('userData', JSON.stringify(newAccount))
-      loginDialogVisible.value = false
-      ElMessage.success('登录成功')
-      router.push('/my')
-      initUserInfo()
+      localStorage.setItem('userData', JSON.stringify(newAccount));
+      loginDialogVisible.value = false;
+      ElMessage.success('登录成功');
+      router.push('/my');
+      initUserInfo();
     } else {
-      ElMessage.error(res.data.msg || '登录失败，邮箱或密码错误')
+      ElMessage.error(res.data.msg || '登录失败，邮箱或密码错误');
     }
   } catch (err) {
-    console.error('登录失败：', err)
-    ElMessage.error('登录失败，网络异常')
+    console.error('登录失败：', err);
+    ElMessage.error('登录失败，网络异常');
   }
-}
+};
 
 /** 退出登录 */
 const handleLogout = () => {
   try {
-    localStorage.removeItem('userData')
+    localStorage.removeItem('userData');
     userInfo.value = {
       isLogin: false,
       userId: '',
       username: '',
       email: '',
       avatarUrl: ''
-    }
-    ElMessage.success('已退出登录')
+    };
+    ElMessage.success('已退出登录');
     router.push('/my').then(() => {
-      window.location.reload()
-    })
+      window.location.reload();
+    });
   } catch (err) {
-    console.error('退出登录失败：', err)
+    console.error('退出登录失败：', err);
   }
-}
+};
+
+// ========== 新增：页面挂载和路由监听 ==========
+// 页面挂载时初始化用户信息
+onMounted(() => {
+  initUserInfo();
+});
+
+// 监听路由参数变化（userId/type），实时更新数据
+watch([() => route.query.userId, () => route.query.type], () => {
+  initUserInfo();
+});
 
 // 监听选中地址变化
 watch(selectedAddressIds, (val) => {
-  selectAll.value = val.length === addressList.value.length
-})
+  selectAll.value = val.length === addressList.value.length;
+});
 </script>
 
 <style scoped>

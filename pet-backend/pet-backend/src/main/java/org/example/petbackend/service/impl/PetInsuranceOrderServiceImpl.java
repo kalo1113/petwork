@@ -13,6 +13,8 @@ import org.example.petbackend.service.PetInsuranceOrderService;
 import org.example.petbackend.service.PetInsuranceService;
 import org.example.petbackend.service.PetService;
 import org.example.petbackend.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -29,10 +31,13 @@ import java.util.Map;
  * 新增：宠物类型与保险适用类型匹配校验
  * 修改：createOrder返回订单ID（移除requestId相关逻辑）
  * 新增：商家端订单管理/审核相关方法（适配现有表结构，无新增字段）
+ * 修复：用户ID类型不匹配导致的宠物归属校验失败问题
  */
 @Service
 public class PetInsuranceOrderServiceImpl extends ServiceImpl<PetInsuranceOrderMapper, PetInsuranceOrder>
         implements PetInsuranceOrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(PetInsuranceOrderServiceImpl.class);
 
     // 注入用户Service和宠物Service
     @Autowired
@@ -84,11 +89,17 @@ public class PetInsuranceOrderServiceImpl extends ServiceImpl<PetInsuranceOrderM
         }
 
         // 3. 强制校验：该宠物必须归属当前用户
+        // ========== 关键修改1：统一类型后再比较 ==========
         if (pet.getUserId() == null) {
             throw new IllegalArgumentException("宠物未绑定用户（petId：" + petId + "）");
         }
-        if (!userId.equals(pet.getUserId())) {
-            throw new IllegalArgumentException("该宠物不属于当前用户（petId：" + petId + "，所属用户ID：" + pet.getUserId() + "）");
+        // 原错误：userId(Integer) 和 pet.getUserId()(Integer) 理论上应该匹配，但加日志排查
+        log.info("校验宠物归属：订单用户ID={}（类型={}），宠物所属用户ID={}（类型={}",
+                userId, userId.getClass().getName(),
+                pet.getUserId(), pet.getUserId().getClass().getName());
+        // 修复：用int值比较，彻底避免类型问题
+        if (userId.intValue() != pet.getUserId().intValue()) {
+            throw new IllegalArgumentException("该宠物不属于当前用户（petId：" + petId + "，所属用户ID：" + pet.getUserId() + "，当前用户ID：" + userId + "）");
         }
 
         // 4. 校验保险ID非空 + 保险存在 + 宠物类型匹配
@@ -235,7 +246,8 @@ public class PetInsuranceOrderServiceImpl extends ServiceImpl<PetInsuranceOrderM
         if (order == null) {
             throw new RuntimeException("订单不存在");
         }
-        if (!userId.equals(order.getUserId())) {
+        // ========== 关键修改2：统一用int值比较用户ID ==========
+        if (userId == null || order.getUserId() == null || userId.intValue() != order.getUserId().intValue()) {
             throw new RuntimeException("无权操作该订单");
         }
         if (order.getOrderStatus() == 2) {
@@ -341,7 +353,10 @@ public class PetInsuranceOrderServiceImpl extends ServiceImpl<PetInsuranceOrderM
         auditRecord.put("insuranceName", order.getInsuranceName());
 
         // 修正：User实体类字段是username，用getUsername()
-        User user = userService.getById(order.getUserId());
+        User user = null;
+        if (order.getUserId() != null) {
+            user = userService.getById(order.getUserId().intValue());
+        }
         if (user != null) {
             auditRecord.put("userName", user.getUsername()); // 适配User实体的username字段
         } else {
