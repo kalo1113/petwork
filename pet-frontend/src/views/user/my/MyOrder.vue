@@ -752,9 +752,9 @@ const calculateWaitingPeriod = (order) => {
     common: '无法计算'
   };
 
-  const purchaseTime = new Date(order.createTime);
+  const effectiveTime = new Date(order.auditPassTime || order.updateTime); 
   const now = new Date();
-  const daysDiff = Math.floor((now - purchaseTime) / (1000 * 60 * 60 * 24));
+  const daysDiff = Math.floor((now - effectiveTime) / (1000 * 60 * 60 * 24));
 
   const accidentWait = order.insuranceDetail.waitingPeriodAccident || 0;
   const diseaseWait = order.insuranceDetail.waitingPeriodDisease || 0;

@@ -74,12 +74,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // 4. 保险图片映射（关键：与数据库路径/insurance-img/匹配）
         log.info("保险图片映射：{} → {}", insuranceImgAccessPath + "**", insuranceImgPath);
         registry.addResourceHandler(insuranceImgAccessPath + "**")
-                .addResourceLocations(insuranceImgPath );
+                .addResourceLocations(insuranceImgPath);
 
-        // 5. 理赔申请图片映射（关键：与数据库路径/claim-img/匹配）
-        log.info("保险图片映射：{} → {}", claimImgAccessPath + "**", claimImgPath);
-        registry.addResourceHandler(claimImgAccessPath + "**")
-                .addResourceLocations(claimImgPath );
+        // 5. 理赔申请图片映射（关键修正：日志文案+路径映射，与数据库路径/claim-img/匹配）
+        log.info("理赔图片映射：{} → {}", claimImgAccessPath + "**", claimImgPath); // 修正日志文案
+        registry.addResourceHandler(claimImgAccessPath + "**")                   // 理赔访问路径
+                .addResourceLocations(claimImgPath);                             // 理赔存储路径
 
     }
 }

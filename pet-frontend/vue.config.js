@@ -22,7 +22,8 @@ module.exports = defineConfig({
       '/pet': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/pet': '/pet' }, timeout: 10000, secure: false },
       '/pet-images': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/pet-images': '/pet-images' }, headers: { 'Cache-Control': 'max-age=86400' } },
       '/user': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/user': '/user' } },
-      '/insurance': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/insurance': '/insurance' } }
+      '/insurance': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/insurance': '/insurance' } },
+      '/claim-img': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/claim-img': '/claim-img' }, timeout: 10000, secure: false },
     }
   },
 

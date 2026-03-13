@@ -414,3 +414,14 @@ export const getMerchantClaimByStatus = (claimStatus, pageNum = 1, pageSize = 10
     claimStatus: claimStatus
   })
 }
+// 根据 userId + petName 查询宠物信息
+export function getPetByUserIdAndName(userId, petName) {
+  return request({
+    url: '/api/claim/pet/by-user-and-name', // 对应后端新增的接口路径
+    method: 'get',
+    params: {
+      userId,
+      petName
+    }
+  })
+}

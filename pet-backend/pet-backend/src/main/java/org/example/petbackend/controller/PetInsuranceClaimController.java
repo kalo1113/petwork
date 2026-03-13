@@ -754,7 +754,44 @@ public class PetInsuranceClaimController {
                     .body(result(false, "打款确认失败：" + e.getMessage(), null));
         }
     }
+// 在 PetInsuranceClaimController 类中添加以下接口方法（建议放在商家端接口区域）
 
+    /**
+     * 根据用户ID和宠物名称查询宠物信息
+     * GET /api/claim/pet/by-user-and-name?userId=xxx&petName=xxx
+     */
+    @GetMapping("/pet/by-user-and-name")
+    public ResponseEntity<Map<String, Object>> getPetByUserIdAndName(
+            @RequestParam Long userId,
+            @RequestParam String petName) {
+        try {
+            // 参数校验
+            if (userId == null || userId <= 0) {
+                return ResponseEntity.badRequest().body(result(false, "用户ID不能为空且必须为正整数", null));
+            }
+            if (petName == null || petName.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(result(false, "宠物名称不能为空", null));
+            }
+
+            // 查询宠物信息（精准匹配 userId + petName）
+            Pet pet = petService.getOne(
+                    Wrappers.lambdaQuery(Pet.class)
+                            .eq(Pet::getUserId, userId)
+                            .eq(Pet::getPetName, petName.trim())
+                            .last("LIMIT 1") // 确保只返回一条结果
+            );
+
+            if (pet == null) {
+                return ResponseEntity.ok(result(false, "未查询到该用户下的该宠物信息", null));
+            }
+
+            return ResponseEntity.ok(result(true, "查询成功", pet));
+        } catch (Exception e) {
+            log.error("根据用户ID和宠物名称查询宠物信息失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(result(false, "查询失败：" + e.getMessage(), null));
+        }
+    }
     /**
      * 校验材料类型是否合法
      */
