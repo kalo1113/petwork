@@ -109,8 +109,8 @@
             <span>待收货</span>
           </div>
           <div class="tab-item" @click="handleOrderTabClick('comment')">
-            <img src="@/assets/images/我的图标/待评价.svg" alt="待评价" class="order-icon" />
-            <span>待评价</span>
+            <img src="@/assets/images/我的图标/理赔相关.svg" alt="理赔订单" class="order-icon" />
+            <span>理赔订单</span>
           </div>
         </div>
       </div>

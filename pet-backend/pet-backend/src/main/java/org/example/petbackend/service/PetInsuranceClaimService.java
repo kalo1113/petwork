@@ -3,11 +3,12 @@ package org.example.petbackend.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.example.petbackend.entity.PetInsuranceClaim;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * 宠物保险理赔申请Service接口
- * 定义理赔申请的核心业务方法，包含查询、创建、状态更新、删除等功能
+ * 定义理赔申请的核心业务方法，包含查询、创建、状态更新、删除、打款金额更新等功能
  */
 public interface PetInsuranceClaimService extends IService<PetInsuranceClaim> {
 
@@ -78,4 +79,14 @@ public interface PetInsuranceClaimService extends IService<PetInsuranceClaim> {
      * @throws IllegalArgumentException 当ID为空时抛出
      */
     boolean deleteClaim(Long claimId);
+
+    /**
+     * 更新理赔申请的打款金额（对应实体类paymentAmount字段）
+     * @param claimId 理赔申请ID
+     * @param paymentAmount 打款金额（必须大于0）
+     * @return 更新结果（true=成功，false=失败）
+     * @throws IllegalArgumentException 当ID为空或金额不合法时抛出
+     */
+    boolean updatePaymentAmount(Long claimId, BigDecimal paymentAmount);
+
 }

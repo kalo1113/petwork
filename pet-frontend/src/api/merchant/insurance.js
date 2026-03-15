@@ -373,7 +373,32 @@ export const confirmClaimPay = (data) => {
 }
 
 /**
- * 5. 快捷查询：商家端精准查询单个理赔单
+ * 5. 商家端更新理赔打款金额（核心新增）
+ * @param {Object} data 打款金额参数 {id, paymentAmount}
+ *                      id: 理赔单ID
+ *                      paymentAmount: 打款金额（必须大于0）
+ * @returns {Promise}
+ */
+export const updateClaimPaymentAmount = (data) => {
+  // 参数校验：避免传递无效值
+  if (!data.id || data.id <= 0) {
+    return Promise.reject(new Error('理赔单ID不能为空且必须为正整数'))
+  }
+  if (!data.paymentAmount || data.paymentAmount <= 0) {
+    return Promise.reject(new Error('打款金额不能为空且必须大于0'))
+  }
+
+  return request({
+    url: `/api/claim/merchant/update-payment-amount/${data.id}`,
+    method: 'put',
+    params: {
+      paymentAmount: data.paymentAmount
+    }
+  })
+}
+
+/**
+ * 6. 快捷查询：商家端精准查询单个理赔单
  * @param {Number} claimId 理赔单ID
  * @returns {Promise}
  */
@@ -386,7 +411,7 @@ export const getMerchantClaimByClaimId = (claimId) => {
 }
 
 /**
- * 6. 快捷查询：商家端查询指定用户的所有理赔单
+ * 7. 快捷查询：商家端查询指定用户的所有理赔单
  * @param {Number} userId 用户ID
  * @param {Number} pageNum 页码
  * @param {Number} pageSize 每页条数
@@ -401,7 +426,7 @@ export const getMerchantClaimByUserId = (userId, pageNum = 1, pageSize = 10) => 
 }
 
 /**
- * 7. 快捷查询：商家端按状态筛选理赔单（如待审核/已通过/已驳回）
+ * 8. 快捷查询：商家端按状态筛选理赔单（如待审核/已通过/已驳回）
  * @param {Number} claimStatus 理赔状态
  * @param {Number} pageNum 页码
  * @param {Number} pageSize 每页条数
@@ -414,14 +439,36 @@ export const getMerchantClaimByStatus = (claimStatus, pageNum = 1, pageSize = 10
     claimStatus: claimStatus
   })
 }
-// 根据 userId + petName 查询宠物信息
+
+/**
+ * 9. 根据 userId + petName 查询宠物信息
+ * @param {Number} userId 用户ID
+ * @param {String} petName 宠物名称
+ * @returns {Promise}
+ */
 export function getPetByUserIdAndName(userId, petName) {
+  // 参数校验
+  if (!userId || userId <= 0) {
+    return Promise.reject(new Error('用户ID不能为空且必须为正整数'))
+  }
+  if (!petName || petName.trim() === '') {
+    return Promise.reject(new Error('宠物名称不能为空'))
+  }
+
   return request({
     url: '/api/claim/pet/by-user-and-name', // 对应后端新增的接口路径
     method: 'get',
     params: {
       userId,
-      petName
+      petName: petName.trim()
     }
+  })
+}
+// 获取保险详情（包含三种等待期）
+export function getPetInsuranceById(insuranceId) {
+  return request({
+    url: '/merchant/insurance/getById',
+    method: 'get',
+    params: { id: insuranceId }
   })
 }

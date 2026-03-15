@@ -23,13 +23,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 /**
  * 宠物保险理赔申请Controller
- * 提供理赔申请的RESTful API接口，包含创建、查询、更新状态、删除、材料上传等功能
+ * 提供理赔申请的RESTful API接口，包含创建、查询、更新状态、删除、材料上传、用户修改申请等功能
  */
 @RestController
 @RequestMapping("/api/claim")
@@ -200,7 +201,6 @@ public class PetInsuranceClaimController {
             if (userId <= 0) {
                 return ResponseEntity.badRequest().body(result(false, "用户ID不能为空", null));
             }
-            // 其他基础校验不变...
 
             // ========== 3. 连表查询：校验宠物与已购保险匹配 ==========
             // 3.1 查询保险订单（用Long类型的orderId）
@@ -546,6 +546,92 @@ public class PetInsuranceClaimController {
         }
     }
 
+    // ==================== 新增：用户修改理赔申请接口 ====================
+    /**
+     * 用户修改理赔申请（仅允许修改非状态类字段，且校验状态是否可修改）
+     * PUT /api/claim/user/update/{id}
+     * 可修改字段：联系方式、是否手术、事故时间、医院类型、医疗费用、病情描述、各类图片URL
+     * 不可修改：理赔ID、用户ID、保险订单ID、宠物信息、理赔状态
+     * 状态限制：仅状态0（待审核）、1（审核中）、3（审核驳回）可修改；2（审核通过）、4（理赔完成）不可修改
+     */
+    @PutMapping("/user/update/{id}")
+    public ResponseEntity<Map<String, Object>> updateClaimByUser(
+            @PathVariable Long id,
+            @RequestBody PetInsuranceClaim updateClaim) {
+        log.info("用户修改理赔申请 ===> ID: {}, 待更新数据: {}", id, updateClaim);
+
+        try {
+            // 1. 查询原理赔记录
+            PetInsuranceClaim originalClaim = petInsuranceClaimService.getClaimById(id);
+            if (originalClaim == null) {
+                log.error("修改理赔申请失败 ===> 理赔申请不存在，ID: {}", id);
+                return ResponseEntity.ok(result(false, "理赔申请不存在", null));
+            }
+
+            // 2. 校验理赔状态是否允许修改（核心逻辑：审核通过/打款成功不可修改）
+            Integer currentStatus = originalClaim.getClaimStatus();
+            if (currentStatus == 2 || currentStatus == 4) {
+                log.error("修改理赔申请失败 ===> 状态不允许修改，ID: {}, 当前状态: {}", id, currentStatus);
+                return ResponseEntity.badRequest().body(result(false,
+                        "审核通过（状态2）或打款成功（状态4）的理赔申请不可修改", null));
+            }
+
+            // 3. 校验用户归属（防止越权修改）
+            Long userId = updateClaim.getUserId();
+            if (userId == null || !userId.equals(originalClaim.getUserId())) {
+                log.error("修改理赔申请失败 ===> 越权操作，ID: {}, 当前用户ID: {}, 申请所属用户ID: {}",
+                        id, userId, originalClaim.getUserId());
+                return ResponseEntity.badRequest().body(result(false, "无权修改他人的理赔申请", null));
+            }
+
+            // 4. 构建更新对象（仅允许修改指定字段，固定核心字段防止篡改）
+            PetInsuranceClaim finalClaim = new PetInsuranceClaim();
+            finalClaim.setId(id); // 固定ID
+            finalClaim.setUserId(originalClaim.getUserId()); // 固定用户ID，防止篡改
+            finalClaim.setInsuranceOrderId(originalClaim.getInsuranceOrderId()); // 固定保险订单ID
+            finalClaim.setPetType(originalClaim.getPetType()); // 固定宠物类型
+            finalClaim.setPetNickname(originalClaim.getPetNickname()); // 固定宠物名称
+            finalClaim.setClaimStatus(originalClaim.getClaimStatus()); // 固定状态，防止篡改
+            finalClaim.setIsDeleted(originalClaim.getIsDeleted()); // 固定删除状态
+
+            // 可修改字段赋值（空值兜底，保持原有逻辑）
+            finalClaim.setContactPhone(updateClaim.getContactPhone() != null ? updateClaim.getContactPhone().trim() : originalClaim.getContactPhone());
+            finalClaim.setRealName(updateClaim.getRealName() != null ? updateClaim.getRealName().trim() : originalClaim.getRealName());
+            finalClaim.setUserEmail(updateClaim.getUserEmail() != null ? updateClaim.getUserEmail().trim() : originalClaim.getUserEmail());
+            finalClaim.setIsSurgery(updateClaim.getIsSurgery() != null ? updateClaim.getIsSurgery() : originalClaim.getIsSurgery());
+            finalClaim.setAccidentTime(updateClaim.getAccidentTime() != null ? updateClaim.getAccidentTime() : originalClaim.getAccidentTime());
+            finalClaim.setHospitalType(updateClaim.getHospitalType() != null ? updateClaim.getHospitalType() : originalClaim.getHospitalType());
+            finalClaim.setMedicalCost(updateClaim.getMedicalCost() != null ? updateClaim.getMedicalCost() : originalClaim.getMedicalCost());
+            finalClaim.setIllnessDesc(updateClaim.getIllnessDesc() != null ? updateClaim.getIllnessDesc().trim() : originalClaim.getIllnessDesc());
+
+            // 图片URL字段（空值兜底，强制覆盖）
+            finalClaim.setPetFrontPhotoUrl(updateClaim.getPetFrontPhotoUrl() != null ? updateClaim.getPetFrontPhotoUrl().trim() : originalClaim.getPetFrontPhotoUrl());
+            finalClaim.setPetFullPhotoUrl(updateClaim.getPetFullPhotoUrl() != null ? updateClaim.getPetFullPhotoUrl().trim() : originalClaim.getPetFullPhotoUrl());
+            finalClaim.setMedicalRecordUrl(updateClaim.getMedicalRecordUrl() != null ? updateClaim.getMedicalRecordUrl().trim() : originalClaim.getMedicalRecordUrl());
+            finalClaim.setInspectionReportUrl(updateClaim.getInspectionReportUrl() != null ? updateClaim.getInspectionReportUrl().trim() : originalClaim.getInspectionReportUrl());
+            finalClaim.setCostDetailUrl(updateClaim.getCostDetailUrl() != null ? updateClaim.getCostDetailUrl().trim() : originalClaim.getCostDetailUrl());
+            finalClaim.setMedicalInvoiceUrl(updateClaim.getMedicalInvoiceUrl() != null ? updateClaim.getMedicalInvoiceUrl().trim() : originalClaim.getMedicalInvoiceUrl());
+            finalClaim.setTreatmentPhotoUrl(updateClaim.getTreatmentPhotoUrl() != null ? updateClaim.getTreatmentPhotoUrl().trim() : originalClaim.getTreatmentPhotoUrl());
+
+            // 5. 执行更新（事务保障）
+            boolean success = petInsuranceClaimService.updateById(finalClaim);
+
+            if (success) {
+                // 重新查询更新后的结果
+                PetInsuranceClaim updatedClaim = petInsuranceClaimService.getById(id);
+                log.info("用户修改理赔申请成功 ===> ID: {}, 更新后数据: {}", id, updatedClaim);
+                return ResponseEntity.ok(result(true, "理赔申请修改成功", updatedClaim));
+            } else {
+                log.error("用户修改理赔申请失败 ===> updateById返回false，ID: {}", id);
+                return ResponseEntity.ok(result(false, "修改失败（数据无变化或更新异常）", null));
+            }
+        } catch (Exception e) {
+            log.error("用户修改理赔申请异常 ===> ID: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(result(false, "修改失败：" + e.getMessage(), null));
+        }
+    }
+
     // ==================== 商家端专属接口（新增） ====================
     /**
      * 商家端 - 分页多条件查询理赔订单（支持理赔单号/用户ID/状态筛选）
@@ -754,7 +840,6 @@ public class PetInsuranceClaimController {
                     .body(result(false, "打款确认失败：" + e.getMessage(), null));
         }
     }
-// 在 PetInsuranceClaimController 类中添加以下接口方法（建议放在商家端接口区域）
 
     /**
      * 根据用户ID和宠物名称查询宠物信息
@@ -792,6 +877,37 @@ public class PetInsuranceClaimController {
                     .body(result(false, "查询失败：" + e.getMessage(), null));
         }
     }
+
+    /**
+     * 商家端 - 更新理赔打款金额
+     * PUT /api/claim/merchant/update-payment-amount/{id}
+     */
+    @PutMapping("/merchant/update-payment-amount/{id}")
+    public ResponseEntity<Map<String, Object>> updateClaimPaymentAmount(
+            @PathVariable Long id,
+            @RequestParam BigDecimal paymentAmount) {
+        try {
+            // 1. 参数校验
+            if (paymentAmount == null || paymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                return ResponseEntity.badRequest().body(result(false, "打款金额必须大于0", null));
+            }
+
+            // 2. 执行金额更新
+            boolean success = petInsuranceClaimService.updatePaymentAmount(id, paymentAmount);
+            if (success) {
+                return ResponseEntity.ok(result(true, "打款金额更新成功", null));
+            } else {
+                return ResponseEntity.ok(result(false, "打款金额更新失败（理赔单不存在或无变化）", null));
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(result(false, e.getMessage(), null));
+        } catch (Exception e) {
+            log.error("商家端更新理赔打款金额失败，ID：{}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(result(false, "打款金额更新失败：" + e.getMessage(), null));
+        }
+    }
+
     /**
      * 校验材料类型是否合法
      */
@@ -802,5 +918,4 @@ public class PetInsuranceClaimController {
             default -> false;
         };
     }
-
 }

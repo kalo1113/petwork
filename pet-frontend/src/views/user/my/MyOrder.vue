@@ -30,15 +30,15 @@
           @click="switchTab('receive')"
         >待收货</div>
         <div 
-  class="order-tab" 
-  :class="{active: activeTab === 'received'}"
-  @click="switchTab('received')"
->已收货</div>
+          class="order-tab" 
+          :class="{active: activeTab === 'received'}"
+          @click="switchTab('received')"
+        >已收货</div>
         <div 
           class="order-tab" 
           :class="{active: activeTab === 'comment'}"
           @click="switchTab('comment')"
-        >待评价</div>
+        >理赔订单</div>
       </div>
 
       <!-- 根据选中的选项卡展示对应内容 -->
@@ -277,6 +277,7 @@
                   type="primary" 
                   class="operate-btn confirm-receive-btn"
                   @click="handleConfirmReceive(order)"
+                  :loading="isConfirmReceiving"
                 >
                   确认收货
                 </el-button>
@@ -284,81 +285,116 @@
             </div>
           </div>
         </div>
-<!-- 已收货订单 -->
-<div v-if="activeTab === 'received'">
-  <div v-if="!receivedOrders.length" class="no-order">
-    <img src="@/assets/images/我的图标/查询.svg" alt="暂无订单" class="no-order-icon" />
-    <p class="no-order-text">暂无已收货订单</p>
-  </div>
-  <div v-else class="order-list">
-    <!-- 已收货订单列表 -->
-    <div class="order-item" v-for="order in receivedOrders" :key="order.orderId">
-      <!-- 订单头：订单号 + 状态 -->
-      <div class="order-header">
-        <span class="order-id">订单号：{{ order.orderId }}</span>
-        <span class="order-status">已收货</span>
-      </div>
-
-      <!-- 商品列表 -->
-      <div class="order-product-list">
-        <div 
-          class="product-item" 
-          v-for="(item, idx) in order.itemList" 
-          :key="idx"
-        >
-          <img 
-            :src="getImgUrl(item.productImgPath)" 
-            :alt="item.productTitle" 
-            class="product-img"
-            @error="(e) => handleImgError(e, item)"
-          >
-          <div class="product-info">
-            <p class="product-title">{{ item.productTitle }}</p>
-            <p class="product-desc">{{ item.productDescription }}</p>
+        <!-- 已收货订单 -->
+        <div v-if="activeTab === 'received'">
+          <div v-if="!receivedOrders.length" class="no-order">
+            <img src="@/assets/images/我的图标/查询.svg" alt="暂无订单" class="no-order-icon" />
+            <p class="no-order-text">暂无已收货订单</p>
           </div>
-          <div class="product-amount">
-            <span class="price">¥{{ item.itemAmount }}</span>
-            <span class="count">×{{ item.productCount }}</span>
+          <div v-else class="order-list">
+            <!-- 已收货订单列表 -->
+            <div class="order-item" v-for="order in receivedOrders" :key="order.orderId">
+              <!-- 订单头：订单号 + 状态 -->
+              <div class="order-header">
+                <span class="order-id">订单号：{{ order.orderId }}</span>
+                <span class="order-status">已收货</span>
+              </div>
+
+              <!-- 商品列表 -->
+              <div class="order-product-list">
+                <div 
+                  class="product-item" 
+                  v-for="(item, idx) in order.itemList" 
+                  :key="idx"
+                >
+                  <img 
+                    :src="getImgUrl(item.productImgPath)" 
+                    :alt="item.productTitle" 
+                    class="product-img"
+                    @error="(e) => handleImgError(e, item)"
+                  >
+                  <div class="product-info">
+                    <p class="product-title">{{ item.productTitle }}</p>
+                    <p class="product-desc">{{ item.productDescription }}</p>
+                  </div>
+                  <div class="product-amount">
+                    <span class="price">¥{{ item.itemAmount }}</span>
+                    <span class="count">×{{ item.productCount }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 实付款 -->
+              <div class="order-footer">
+                <span class="total-amount">实付款 ¥{{ order.totalAmount }}</span>
+              </div>
+
+              <!-- 操作按钮 -->
+              <div class="order-operate">
+                <el-dropdown @command="(cmd) => handleReceivedOrderCommand(cmd, order)" placement="top">
+                  <el-button type="text" class="operate-btn">
+                    更多
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="delete">删除订单</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+
+                <el-button type="text" class="operate-btn">查看物流</el-button>
+              </div>
+            </div>
           </div>
         </div>
+<!-- 理赔订单 -->
+<div v-if="activeTab === 'comment'">
+  <div v-if="!commentOrders.length" class="no-order">
+    <img src="@/assets/images/我的图标/查询.svg" alt="暂无订单" class="no-order-icon" />
+    <p class="no-order-text">暂无理赔订单</p>
+  </div>
+  <div v-else class="order-list">
+    <!-- 理赔订单列表（适配接口返回字段，保留原有样式结构） -->
+    <div class="order-item" v-for="order in commentOrders" :key="order.id">
+      <!-- 替换渲染字段：适配接口返回的理赔订单字段，保留原有样式 -->
+      <div class="order-header">
+        <span class="order-id">理赔单号：{{ order.claimNo || order.orderNo || '无' }}</span>
+<span 
+  class="order-status insurance-status" 
+  :class="getStatusClass(order.claimStatus, 'claim')"
+  :style="{color: getClaimStatusColor(order.claimStatus)}"
+>
+  {{ getClaimStatusText(order.claimStatus) }}
+</span>
       </div>
-
-      <!-- 实付款 -->
-      <div class="order-footer">
-        <span class="total-amount">实付款 ¥{{ order.totalAmount }}</span>
+      
+      <!-- 理赔订单详情（沿用原有保险订单样式结构） -->
+      <div class="insurance-order-detail">
+        <div class="insurance-info-row">
+          <span class="info-label">宠物名称：</span>
+          <span class="info-value">{{ order.petNickname }}</span>
+        </div>
+        <div class="insurance-info-row">
+          <span class="info-label">理赔金额：</span>
+          <span class="info-value" style="color: #f56c6c;">¥{{ order.amount || order.paymentAmount || order.claimAmount || 0 }}</span>
+        </div>
+        <div class="insurance-info-row">
+          <span class="info-label">申请时间：</span>
+          <span class="info-value">{{ formatTime(order.createTime) }}</span>
+        </div>
+        <div class="insurance-info-row" v-if="order.remark || order.auditRemark">
+          <span class="info-label">审核备注：</span>
+          <span class="info-value">{{ order.auditRemark || order.remark || '无' }}</span>
+        </div>
       </div>
-
-      <!-- 操作按钮 -->
+      
+      <!-- 操作按钮（沿用原有样式） -->
       <div class="order-operate">
-        <el-dropdown @command="(cmd) => handleReceivedOrderCommand(cmd, order)" placement="top">
-          <el-button type="text" class="operate-btn">
-            更多
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="delete">删除订单</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <el-button type="text" class="operate-btn">查看物流</el-button>
+        <el-button type="text" class="operate-btn" @click="viewClaimOrderDetail(order)">查看详情</el-button>
       </div>
     </div>
   </div>
 </div>
-        <!-- 待评价订单 -->
-        <div v-if="activeTab === 'comment'">
-          <div v-if="!commentOrders.length" class="no-order">
-            <img src="@/assets/images/我的图标/查询.svg" alt="暂无订单" class="no-order-icon" />
-            <p class="no-order-text">暂无待评价订单</p>
-          </div>
-          <div v-else class="order-list">
-            <!-- 待评价订单列表 -->
-            <div class="order-item" v-for="order in commentOrders" :key="order.id">
-              {{ order.title }} - {{ order.amount }}元
-            </div>
-          </div>
-        </div>
 
         <!-- 全部订单 -->
         <div v-if="activeTab === 'all'">
@@ -595,13 +631,247 @@
         <el-button @click="insuranceDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+<!-- 理赔订单详情弹窗 -->
+<el-dialog
+  v-model="claimDetailVisible"
+  title="理赔订单详情"
+  width="650px"
+  :close-on-click-modal="false"
+>
+  <div v-if="currentClaimOrder" class="insurance-detail-content">
+    <!-- 理赔订单基础信息 -->
+    <div class="detail-row">
+      <span class="detail-label">理赔单号：</span>
+      <span class="detail-value">{{ currentClaimOrder.claimNo || '无' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">理赔状态：</span>
+      <span class="detail-value" :style="{color: getClaimStatusColor(currentClaimOrder.claimStatus)}">
+        {{ getClaimStatusText(currentClaimOrder.claimStatus) }}
+      </span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">理赔类型：</span>
+      <span class="detail-value">{{ currentClaimOrder.claimType || '医疗理赔' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">赔付金额：</span>
+      <span class="detail-value" style="color: #f56c6c;">¥{{ (currentClaimOrder.paymentAmount || 0).toFixed(2) }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">申请时间：</span>
+      <span class="detail-value">{{ formatTime(currentClaimOrder.createTime) }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">更新时间：</span>
+      <span class="detail-value">{{ formatTime(currentClaimOrder.updateTime) }}</span>
+    </div>
+    <div class="detail-row" v-if="currentClaimOrder.auditTime">
+      <span class="detail-label">审核时间：</span>
+      <span class="detail-value">{{ formatTime(currentClaimOrder.auditTime) }}</span>
+    </div>
+
+    <!-- 分割线 -->
+    <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+
+    <!-- 宠物信息 -->
+    <div class="detail-row">
+      <span class="detail-label">宠物昵称：</span>
+      <span class="detail-value">{{ currentClaimOrder.petNickname || '未知' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">宠物类型：</span>
+      <span class="detail-value">{{ currentClaimOrder.petType || '未知' }}</span>
+    </div>
+
+    <!-- 分割线 -->
+    <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+
+    <!-- 就诊信息 -->
+    <div class="detail-row">
+      <span class="detail-label">医院类型：</span>
+      <span class="detail-value">{{ currentClaimOrder.hospitalType === 1 ? '定点医院' : '非定点医院' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">是否手术：</span>
+      <span class="detail-value">{{ currentClaimOrder.isSurgery ? '是' : '否' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">医疗费用：</span>
+      <span class="detail-value">¥{{ (currentClaimOrder.medicalCost || 0).toFixed(2) }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">疾病描述：</span>
+      <span class="detail-value">{{ currentClaimOrder.illnessDesc || '无' }}</span>
+    </div>
+
+    <!-- 分割线 -->
+    <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+
+    <!-- 联系信息 -->
+    <div class="detail-row">
+      <span class="detail-label">联系人：</span>
+      <span class="detail-value">{{ currentClaimOrder.realName || '未知' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">联系电话：</span>
+      <span class="detail-value">{{ currentClaimOrder.contactPhone || '未知' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">联系邮箱：</span>
+      <span class="detail-value">{{ currentClaimOrder.userEmail || '未知' }}</span>
+    </div>
+
+    <!-- 分割线 -->
+    <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+
+    <!-- 审核备注 -->
+    <div class="detail-row" v-if="currentClaimOrder.auditRemark || currentClaimOrder.remark">
+      <span class="detail-label" :style="{color: currentClaimOrder.claimStatus === 4 ? '#67c23a' : '#f56c6c', fontWeight: 600}">
+        {{ currentClaimOrder.claimStatus === 4 ? '审核备注' : '处理备注' }}：
+      </span>
+    </div>
+    <div class="detail-row" v-if="currentClaimOrder.auditRemark || currentClaimOrder.remark">
+      <span class="detail-value" 
+            :style="{
+              padding: '12px', 
+              background: currentClaimOrder.claimStatus === 4 ? '#f0f9ff' : '#fff2f2',
+              borderRadius: '6px', 
+              border: currentClaimOrder.claimStatus === 4 ? '1px solid #b3d8ff' : '1px solid #ffd4d4'
+            }">
+        {{ currentClaimOrder.auditRemark || currentClaimOrder.remark || '无' }}
+      </span>
+    </div>
+
+    <!-- 分割线 -->
+    <div style="height: 1px; background: #eee; margin: 15px 0;"></div>
+
+<!-- 图片凭证（直接展示） -->
+<div class="detail-row">
+  <span class="detail-label">费用明细：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.costDetailUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.costDetailUrl)" 
+        alt="费用明细" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.costDetailUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">检查报告：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.inspectionReportUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.inspectionReportUrl)" 
+        alt="检查报告" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.inspectionReportUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">医疗发票：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.medicalInvoiceUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.medicalInvoiceUrl)" 
+        alt="医疗发票" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.medicalInvoiceUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">病历：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.medicalRecordUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.medicalRecordUrl)" 
+        alt="病历" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.medicalRecordUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">宠物正面照：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.petFrontPhotoUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.petFrontPhotoUrl)" 
+        alt="宠物正面照" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.petFrontPhotoUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">宠物全身照：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.petFullPhotoUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.petFullPhotoUrl)" 
+        alt="宠物全身照" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.petFullPhotoUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+<div class="detail-row">
+  <span class="detail-label">治疗照片：</span>
+  <div class="detail-value">
+    <div v-if="currentClaimOrder.treatmentPhotoUrl" class="claim-img-container">
+      <img 
+        :src="getImgUrl(currentClaimOrder.treatmentPhotoUrl)" 
+        alt="治疗照片" 
+        class="claim-img"
+        @click="previewImage(currentClaimOrder.treatmentPhotoUrl)"
+        @error="handleImgError"
+      >
+    </div>
+    <span v-else class="no-img-text">暂无图片</span>
+  </div>
+</div>
+
+  </div>
+
+  <!-- 空数据兜底 -->
+  <div v-else class="empty-tip" style="text-align: center; padding: 20px; color: #999;">
+    暂无理赔订单详情
+  </div>
+
+  <template #footer>
+    <el-button @click="claimDetailVisible = false">关闭</el-button>
+  </template>
+</el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, reactive, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElIcon, ElMessage, ElMessageBox,  ElButton } from 'element-plus'
+import { ElDropdown, ElDropdownMenu, ElDropdownItem, ElIcon, ElMessage, ElMessageBox, ElButton } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 // 引入所有需要的接口（新增确认收货接口）
 import { 
@@ -610,6 +880,9 @@ import {
   getPetInfoById, getUserInfo, payInsuranceOrderRemaining, getInsuranceDetail,
   getInsuranceBenefitListByPetId, confirmReceiveOrder // 新增导入确认收货接口
 } from '@/api/user/index.js'
+
+// 新增：导入商家端理赔订单接口
+import { getMerchantClaimByUserId, getMerchantClaimDetail } from '@/api/merchant/insurance.js' // 请确认接口文件路径正确
 
 const router = useRouter()
 const route = useRoute()
@@ -621,7 +894,7 @@ const activeTab = ref(route.query.activeTab || 'effective')
 const effectiveOrders = ref([])
 const deliverOrders = ref([])
 const receiveOrders = ref([]) // 待收货订单数据
-const commentOrders = ref([])
+const commentOrders = ref([]) // 理赔订单
 const allOrders = ref([])
 const userName = ref('')
 const currentUserName = ref('')
@@ -630,7 +903,38 @@ const receivedOrders = ref([]) // 已收货订单
 // 钱包金额
 const walletBalance = ref(0)
 const pendingAmount = ref(0)
+// 理赔状态文本映射
+const getClaimStatusText = (status) => {
+  const statusMap = {
+    0: '待审核',
+    1: '审核中',
+    2: '审核通过',
+    3: '审核驳回',
+    4: '理赔完成'
+  }
+  return statusMap[status] || '未知状态'
+}
 
+// 理赔状态颜色映射
+const getClaimStatusColor = (status) => {
+  const colorMap = {
+    0: '#409eff',
+    1: '#e6a23c',
+    2: '#f56c6c',
+    3: '#e6a23c',
+    4: '#67c23a'
+  }
+  return colorMap[status] || '#909399'
+}
+
+// 图片预览方法
+const previewImage = (url) => {
+  if (!url) {
+    ElMessage.info('暂无图片')
+    return
+  }
+  window.open(`http://localhost:8080${url}`, '_blank')
+}
 // 当前登录用户ID
 const userId = ref('')
 const initUserId = () => {
@@ -653,14 +957,34 @@ const getStatusText = (status) => {
 }
 
 // 订单状态样式类映射
-const getStatusClass = (status) => {
-  const classMap = {
-    0: 'status-pending',
-    1: 'status-success',
-    2: 'status-danger'
+// 1. 修复理赔状态样式类映射（原函数映射错误）
+const getStatusClass = (status, type = 'insurance') => {
+  // 区分保险订单和理赔订单的样式类
+  if (type === 'claim') {
+    const classMap = {
+      0: 'claim-status-pending',   // 待审核 - 蓝色
+      1: 'claim-status-processing',// 审核中 - 橙色
+      2: 'claim-status-success',   // 审核通过 - 橙色
+      3: 'claim-status-danger',    // 审核驳回 - 红色
+      4: 'claim-status-completed'  // 理赔完成 - 绿色
+    }
+    return classMap[status] || 'claim-status-default'
+  } else {
+    // 保险订单原有样式
+    const classMap = {
+      0: 'status-pending',   // 已支付
+      1: 'status-success',   // 已生效
+      2: 'status-danger'     // 被驳回
+    }
+    return classMap[status] || 'status-default'
   }
-  return classMap[status] || 'status-default'
 }
+
+
+
+// 理赔订单详情弹窗相关
+const claimDetailVisible = ref(false)
+const currentClaimOrder = ref(null)
 
 // 充值弹窗相关
 const rechargeDialogVisible = ref(false)
@@ -903,7 +1227,7 @@ const fetchOrderData = async (tabKey) => {
         }
         break
       }
-      case 'receive': { // 新增待收货订单请求逻辑
+      case 'receive': { // 待收货订单请求逻辑
         const res = await getOrderList(userId.value)
         if (res.code === 200) {
           allOrderList.value = res.data || []
@@ -916,18 +1240,70 @@ const fetchOrderData = async (tabKey) => {
         break
       }
       case 'received': {
-  const res = await getOrderList(userId.value)
-  if (res.code === 200) {
-    allOrderList.value = res.data || []
-    receivedOrders.value = allOrderList.value.filter(order => order.orderStatus === 3)
-  } else {
-    ElMessage.error(res.msg || '获取已收货订单失败')
-    receivedOrders.value = []
-  }
-  break
-}
-      case 'comment':
+        const res = await getOrderList(userId.value)
+        if (res.code === 200) {
+          allOrderList.value = res.data || []
+          receivedOrders.value = allOrderList.value.filter(order => order.orderStatus === 3)
+        } else {
+          ElMessage.error(res.msg || '获取已收货订单失败')
+          receivedOrders.value = []
+        }
         break
+      }
+      case 'comment': { // 理赔订单（使用商家端接口）
+        console.log('===== 开始获取理赔订单 =====')
+        console.log('当前用户ID：', userId.value)
+        
+        try {
+          // 使用商家端接口：查询指定用户的所有理赔单（不分页，取第1页，每页100条）
+          const res = await getMerchantClaimByUserId(userId.value, 1, 100)
+          
+          // 关键调试打印：输出原始返回数据
+          console.log('理赔订单接口返回原始数据：', res)
+          
+          if (res && res.code === 200) {
+            // 商家端接口返回的是分页数据，需要从 data.data.records 中取列表
+            const claimList = res.data?.data?.records || []
+            console.log('接口返回的理赔订单列表：', claimList)
+            console.log('理赔订单数量：', claimList.length)
+            
+            // 格式化数据（适配前端渲染字段）
+            const formattedClaims = claimList.map(claim => ({
+              ...claim, // 直接展开所有字段，确保接口返回的字段都能被访问
+              id: claim.id,
+              claimId: claim.id,
+              claimNo: claim.claimNo,
+              amount: claim.paymentAmount || claim.claimAmount || 0,
+              claimType: claim.claimType || '医疗理赔',
+              claimStatus: claim.claimStatus,
+              createTime: claim.createTime,
+              remark: claim.auditRemark || claim.remark,
+              orderNo: claim.claimNo // 兼容前端显示的订单号字段
+            }))
+            
+            console.log('格式化后的理赔订单：', formattedClaims)
+            commentOrders.value = formattedClaims
+            
+            if (claimList.length === 0) {
+              console.log('⚠️ 未找到理赔订单，可能的原因：')
+              console.log('1. 当前用户（ID：' + userId.value + '）没有理赔订单')
+              console.log('2. 接口返回数据格式不符合预期')
+              console.log('3. 接口权限问题（商家端接口是否需要特殊权限）')
+            }
+          } else {
+            console.error('获取理赔订单失败：', res?.msg || '接口返回错误')
+            ElMessage.error(res?.msg || '获取理赔订单失败')
+            commentOrders.value = []
+          }
+        } catch (error) {
+          console.error('获取理赔订单异常：', error)
+          ElMessage.error('获取理赔订单失败：' + error.message)
+          commentOrders.value = []
+        }
+        
+        console.log('===== 结束获取理赔订单 =====')
+        break
+      }
       case 'all':
         break
       default:
@@ -936,6 +1312,45 @@ const fetchOrderData = async (tabKey) => {
   } catch (err) {
     console.error(`获取${tabKey}数据失败：`, err)
     ElMessage.error('网络异常，获取数据失败，请重试')
+  }
+}
+
+// 查看理赔订单详情
+const viewClaimOrderDetail = async (order) => {
+  try {
+    // 调用详情接口获取完整信息
+    if (order.id && typeof getMerchantClaimDetail === 'function') {
+      const res = await getMerchantClaimDetail(order.id)
+      console.log('详情接口返回完整数据：', res) // 调试用，可保留
+      
+      if (res && res.success && res.data?.claim) {
+        // ✅ 关键：从 res.data.claim 里取出理赔详情
+        let claimDetail = res.data.claim
+        
+        // 如果有宠物ID，补充宠物名称（可选）
+        if (claimDetail.petId) {
+          const petNameMap = await getPetNamesByIds([claimDetail.petId])
+          claimDetail.petName = petNameMap[claimDetail.petId] || `宠物${claimDetail.petId}`
+        }
+        
+        currentClaimOrder.value = claimDetail // 赋值给弹窗变量
+      } else {
+        // 接口调用失败时，降级使用列表数据
+        currentClaimOrder.value = order
+        console.warn('接口返回格式不符合预期，使用列表数据')
+      }
+    } else {
+      // 无详情接口时，直接使用列表数据
+      currentClaimOrder.value = order
+    }
+    
+    claimDetailVisible.value = true
+  } catch (err) {
+    console.error('获取理赔订单详情失败：', err)
+    ElMessage.error('获取理赔订单详情失败，请重试')
+    // 兜底：使用列表数据
+    currentClaimOrder.value = order
+    claimDetailVisible.value = true
   }
 }
 
@@ -968,8 +1383,8 @@ const handleConfirmReceive = async (order) => {
       ElMessage.success('确认收货成功！')
       // 重新请求待收货订单数据
       await fetchOrderData('receive')
-      // 同时更新待评价订单数据（可选）
-      // await fetchOrderData('comment')
+      // 同时更新已收货订单数据
+      await fetchOrderData('received')
     } else {
       ElMessage.error(res?.msg || '确认收货失败，请稍后重试')
     }
@@ -1260,6 +1675,7 @@ const handleAddToCart = async (order) => {
     ElMessage.error('加入购物车失败：' + err.message)
   }
 }
+
 // 已收货订单操作处理
 const handleReceivedOrderCommand = async (command, order) => {
   if (!order || !order.orderId) {
@@ -1294,6 +1710,7 @@ const handleReceivedOrderCommand = async (command, order) => {
     }
   }
 }
+
 /** 返回上一页 */
 const handleBack = () => {
   try {
@@ -1363,14 +1780,17 @@ const handleRecharge = async () => {
     return
   }
   try {
+    // 表单验证
+    if (rechargeFormRef.value) {
+      await rechargeFormRef.value.validate()
+    }
+    
     const amount = Number(rechargeForm.amount)
     if (isNaN(amount) || amount < 1) {
       ElMessage.error('充值金额必须是大于等于1的数字')
       return
     }
-    if (rechargeFormRef.value) {
-      rechargeFormRef.value.clearValidate()
-    }
+    
     isRecharging.value = true
     const res = await rechargeWallet(userId.value, amount)
     if (res && res.code === 200) {
@@ -1382,7 +1802,9 @@ const handleRecharge = async () => {
     }
   } catch (err) {
     console.error('充值失败：', err)
-    ElMessage.error('充值失败：' + (err?.response?.data?.msg || err.message))
+    if (err.name !== 'ValidationError') {
+      ElMessage.error('充值失败：' + (err?.response?.data?.msg || err.message))
+    }
   } finally {
     isRecharging.value = false
   }
@@ -1880,5 +2302,72 @@ onMounted(() => {
 /* 移除原有冲突样式 */
 .insurance-status.cancelled {
   color: inherit !important;
+}
+
+/* 理赔订单图片样式 */
+.claim-img-container {
+  margin: 5px 0;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claim-img-container:hover {
+  box-shadow: 0 0 8px rgba(64, 158, 255, 0.3);
+}
+
+.claim-img {
+  width: 200px;
+  height: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.no-img-text {
+  color: #999;
+  font-size: 13px;
+}
+/* 理赔订单状态样式（提升优先级） */
+:deep(.order-status.insurance-status.claim-status-pending) {
+  color: #409eff !important;
+  background-color: #f0f9ff !important;
+  border-color: #b3d8ff !important;
+}
+
+:deep(.order-status.insurance-status.claim-status-processing) {
+  color: #e6a23c !important;
+  background-color: #fff7e6 !important;
+  border-color: #ffd591 !important;
+}
+
+:deep(.order-status.insurance-status.claim-status-success) {
+  color: #e6a23c !important;
+  background-color: #fff7e6 !important;
+  border-color: #ffd591 !important;
+}
+
+:deep(.order-status.insurance-status.claim-status-danger) {
+  color: #f56c6c !important;
+  background-color: #fff2f2 !important;
+  border-color: #feb8b8 !important;
+}
+
+:deep(.order-status.insurance-status.claim-status-completed) {
+  color: #67c23a !important;
+  background-color: #f0f9ff !important;
+  border-color: #b3d8ff !important;
+}
+
+:deep(.order-status.insurance-status.claim-status-default) {
+  color: #909399 !important;
+  background-color: #f5f5f5 !important;
+  border-color: #e4e7ed !important;
+}
+
+/* 确保行内样式优先级最高 */
+:deep(.order-status.insurance-status) {
+  color: inherit !important;
+  /* 继承行内样式的颜色 */
 }
 </style>

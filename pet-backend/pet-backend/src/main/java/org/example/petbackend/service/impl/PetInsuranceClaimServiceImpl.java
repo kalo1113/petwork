@@ -7,6 +7,7 @@ import org.example.petbackend.entity.PetInsuranceClaim;
 import org.example.petbackend.mapper.PetInsuranceClaimMapper;
 import org.example.petbackend.service.PetInsuranceClaimService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -15,7 +16,7 @@ import java.util.UUID;
 
 /**
  * 宠物保险理赔申请Service实现类
- * 核心：提供理赔申请的创建、查询、状态更新等核心业务逻辑
+ * 核心：提供理赔申请的创建、查询、状态更新、打款金额更新等核心业务逻辑
  */
 @Service
 public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimMapper, PetInsuranceClaim>
@@ -94,6 +95,7 @@ public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimM
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public PetInsuranceClaim createClaim(PetInsuranceClaim claim) {
         // 1. 参数校验
         if (claim == null) {
@@ -147,6 +149,7 @@ public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimM
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateClaimStatus(Long claimId, Integer status, Long auditorId, String auditRemark) {
         // 1. 参数校验
         if (claimId == null) {
@@ -161,14 +164,13 @@ public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimM
         updateWrapper.eq(PetInsuranceClaim::getId, claimId)
                 .eq(PetInsuranceClaim::getIsDeleted, 0);
 
-        // 3. 构建更新内容
+        // 3. 构建更新内容（移除auditorId相关代码，避免实体类无该字段报错）
         PetInsuranceClaim updateClaim = new PetInsuranceClaim();
         updateClaim.setClaimStatus(status);
         updateClaim.setUpdateTime(LocalDateTime.now());
 
-        // 审核相关字段（审核中/通过/驳回时必填）
+        // 审核相关字段（仅保留审核时间和备注）
         if (status != 0) {
-            updateClaim.setAuditorId(auditorId);
             updateClaim.setAuditTime(LocalDateTime.now());
             updateClaim.setAuditRemark(auditRemark == null ? "" : auditRemark);
         }
@@ -178,6 +180,7 @@ public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimM
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteClaim(Long claimId) {
         if (claimId == null) {
             throw new IllegalArgumentException("理赔申请ID不能为空");
@@ -193,5 +196,31 @@ public class PetInsuranceClaimServiceImpl extends ServiceImpl<PetInsuranceClaimM
         deleteClaim.setUpdateTime(LocalDateTime.now());
 
         return update(deleteClaim, updateWrapper);
+    }
+
+    // ==================== 打款金额相关方法 ====================
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean updatePaymentAmount(Long claimId, BigDecimal paymentAmount) {
+        // 1. 参数校验
+        if (claimId == null) {
+            throw new IllegalArgumentException("理赔申请ID不能为空");
+        }
+        if (paymentAmount == null || paymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("打款金额必须大于0");
+        }
+
+        // 2. 构建更新条件（仅更新未删除的理赔单）
+        LambdaUpdateWrapper<PetInsuranceClaim> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(PetInsuranceClaim::getId, claimId)
+                .eq(PetInsuranceClaim::getIsDeleted, 0);
+
+        // 3. 构建更新内容
+        PetInsuranceClaim updateClaim = new PetInsuranceClaim();
+        updateClaim.setPaymentAmount(paymentAmount); // 更新打款金额
+        updateClaim.setUpdateTime(LocalDateTime.now());
+
+        // 4. 执行更新
+        return update(updateClaim, updateWrapper);
     }
 }

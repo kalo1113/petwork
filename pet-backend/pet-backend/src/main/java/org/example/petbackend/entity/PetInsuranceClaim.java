@@ -56,8 +56,7 @@ public class PetInsuranceClaim {
     // 流程状态字段
     private Integer claimStatus; // 理赔状态：0=待审核，1=审核中，2=审核通过，3=审核驳回，4=理赔完成，对应claim_status
     private String auditRemark; // 审核备注（驳回原因等），对应audit_remark
-    @TableField(jdbcType = JdbcType.BIGINT, typeHandler = LongTypeHandler.class)
-    private Long auditorId;
+    private BigDecimal paymentAmount;   //打款金额
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private LocalDateTime auditTime; // 审核时间，对应audit_time
 
