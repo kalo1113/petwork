@@ -1,5 +1,44 @@
 import request from '@/utils/request' 
+import { ElMessage } from 'element-plus'
+import axios from 'axios'
+import { BASE_URL } from '@/config/index.js'
+// ===================== 通用配置 =====================
+/**
+ * 创建axios实例的通用方法
+ * @param {String} baseURL 基础请求地址
+ * @returns {axios.Instance} 配置好的axios实例
+ */
+const createAxiosInstance = (baseURL) => {
+  const instance = axios.create({
+    baseURL: baseURL,
+    timeout: 30000 // 延长超时，适配图片上传
+  })
 
+  // 跨域请求携带凭证
+  instance.defaults.withCredentials = true
+
+  // 响应拦截器：统一处理返回格式和错误提示
+  instance.interceptors.response.use(
+    (response) => {
+      // 直接返回响应数据，简化前端调用
+      return response.data
+    },
+    (error) => {
+      console.error('请求异常：', error)
+      // 优化错误提示：优先取后端返回的msg，再降级
+      const errorMsg = error.response?.data?.msg || error.response?.data || '请求失败，请重试'
+      ElMessage.error(errorMsg)
+      // 返回标准化的错误对象
+      return Promise.reject({
+        code: error.response?.status || 500,
+        msg: error.message || '请求失败'
+      })
+    }
+  )
+
+  return instance
+}
+const userAxios = createAxiosInstance(BASE_URL)
 // ====================== 商家保险核心操作 ======================
 // 创建保险（适配后端 /insurance/add 接口，纯JSON提交）
 export const createInsurance = (data) => {
@@ -118,14 +157,6 @@ export const getOrderDetail = (id) => {
   })
 }
 
-// 5. 一次性缴清剩余保费（适配后端 /api/order/payRemaining 接口）
-export const payRemainingPremium = (data) => {
-  return request({
-    url: '/api/order/payRemaining',
-    method: 'post',
-    data // 传参格式：{orderId: 1, userId: 1}
-  })
-}
 
 // 6. 【扩展】商家端查询所有订单（分页，需后端补充接口后启用）
 export const getMerchantOrderList = (params = {}) => {
@@ -346,15 +377,27 @@ export const getMerchantClaimDetail = (claimId) => {
  * @returns {Promise}
  */
 export const auditClaim = (data) => {
+  // 前置校验
+  if (!data.id || data.id <= 0) return Promise.reject(new Error('无效的理赔ID'));
+  if (data.claimStatus === 2 && (!data.paymentAmount || data.paymentAmount <= 0)) {
+    return Promise.reject(new Error('审核通过必须填写打款金额且金额大于0'));
+  }
+  if (data.claimStatus === 3 && (!data.auditRemark || data.auditRemark.trim() === '')) {
+    return Promise.reject(new Error('驳回必须填写审核备注'));
+  }
+
+  // 🔥 关键修复：使用 data 传参（对应后端 @RequestParam）
+  // 不要用 params，params 是拼在 URL 后的查询字符串，虽然也能传，但容易出问题
   return request({
     url: `/api/claim/merchant/audit/${data.id}`,
     method: 'put',
-    params: {
+    data: {
       claimStatus: data.claimStatus,
+      paymentAmount: data.paymentAmount, // 确保这里有值
       auditorId: data.auditorId,
-      auditRemark: data.auditRemark
+      auditRemark: data.auditRemark?.trim()
     }
-  })
+  });
 }
 
 /**
@@ -472,3 +515,18 @@ export function getPetInsuranceById(insuranceId) {
     params: { id: insuranceId }
   })
 }
+/**
+ * 查询用户金额信息（余额+待入账）
+ * @param {Number} userId 用户ID
+ * @returns {Promise} 金额信息
+ */
+export const getUserAmountInfo = async (userId) => {
+  if (isNaN(Number(userId))) {
+    ElMessage.error('用户ID异常，无法查询金额信息')
+    throw new Error('userId不是有效数字')
+  }
+  return userAxios.get(`/user/amount/${userId}`, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+

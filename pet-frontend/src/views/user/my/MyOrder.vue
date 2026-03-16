@@ -105,6 +105,7 @@
                       <!-- 修改2：仅对未取消的订单显示取消选项 -->
                       <el-dropdown-item command="cancel" v-if="order.orderStatus === 0 || order.orderStatus === 1">取消订单</el-dropdown-item>
                       <el-dropdown-item command="delete">删除订单</el-dropdown-item>
+                      <el-dropdown-item v-if="order.orderStatus !== 2" command="insurance">理赔申请</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -1487,6 +1488,19 @@ const handleInsuranceOrderCommand = async (command, order) => {
     ElMessage.error('订单信息异常，无法操作')
     return
   }
+
+  // 新增：处理理赔跳转逻辑（无需await，直接跳转）
+  if (command === 'insurance') {
+    router.push({
+      path: '/user/claim',
+      query: {
+        orderId: order.id // 传递当前保险订单的真实ID
+      }
+    })
+    // 跳转后直接return，避免后续逻辑执行
+    return
+  }
+
   try {
     if (command === 'cancel') {
       await ElMessageBox.confirm(

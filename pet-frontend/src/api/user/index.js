@@ -1572,6 +1572,64 @@ export const uploadClaimMaterial = async (file, claimId, materialType) => {
 }
 
 /**
+ * 用户修改理赔申请（仅状态0/1/3可修改）
+ * @param {Number} id 理赔申请ID
+ * @param {Object} claimData 要修改的理赔数据
+ * @returns {Promise} 修改结果
+ */
+export const updateClaimByUser = async (id, claimData) => {
+  // 1. 基础参数校验
+  if (isNaN(Number(id)) || Number(id) <= 0) {
+    ElMessage.error('理赔申请ID必须为正整数')
+    throw new Error('claimId不合法')
+  }
+  if (typeof claimData !== 'object' || claimData === null) {
+    ElMessage.error('修改数据必须为有效对象')
+    throw new Error('claimData不合法')
+  }
+
+  // 2. 核心字段校验（和创建接口保持一致）
+  if (claimData.contactPhone && !/^1[3-9]\d{9}$/.test(claimData.contactPhone)) {
+    ElMessage.error('请输入正确的联系电话')
+    throw new Error('contactPhone不合法')
+  }
+  if (claimData.realName && claimData.realName.trim().length === 0) {
+    ElMessage.error('真实姓名不能为空')
+    throw new Error('realName为空')
+  }
+  if (claimData.userEmail && !/^[\w.-]+@[a-zA-Z0-9-]+\.[a-zA-Z]+$/.test(claimData.userEmail)) {
+    ElMessage.error('请输入正确的邮箱')
+    throw new Error('userEmail不合法')
+  }
+  if (claimData.medicalCost !== undefined && (isNaN(Number(claimData.medicalCost)) || Number(claimData.medicalCost) <= 0)) {
+    ElMessage.error('就诊费用必须大于0')
+    throw new Error('medicalCost不合法')
+  }
+  if (claimData.illnessDesc && claimData.illnessDesc.trim().length < 10) {
+    ElMessage.error('病情描述至少10个字')
+    throw new Error('illnessDesc不合法')
+  }
+
+  // 3. 图片URL字段兜底（空值转为空字符串）
+  const submitData = {
+    ...claimData,
+    userId: Number(claimData.userId), // 强制转为数字，防止类型错误
+    petFrontPhotoUrl: claimData.petFrontPhotoUrl || '',
+    petFullPhotoUrl: claimData.petFullPhotoUrl || '',
+    medicalRecordUrl: claimData.medicalRecordUrl || '',
+    inspectionReportUrl: claimData.inspectionReportUrl || '',
+    costDetailUrl: claimData.costDetailUrl || '',
+    medicalInvoiceUrl: claimData.medicalInvoiceUrl || '',
+    treatmentPhotoUrl: claimData.treatmentPhotoUrl || ''
+  }
+
+  // 4. 调用后端修改接口
+  return claimAxios.put(`/api/claim/user/update/${Number(id)}`, submitData, {
+    headers: { 'Content-Type': 'application/json' }
+  })
+}
+
+/**
  * 更新临时材料的关联claimId
  * @param {Number} oldClaimId 旧理赔ID（临时ID=0）
  * @param {Number} newClaimId 新理赔ID（真实ID）

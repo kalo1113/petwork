@@ -346,7 +346,7 @@ const handleClaimDetail = (benefit) => {
   router.push({
     path: '/user/claim',
     query: {
-      orderId: orderId // 现在传的是真正的保险订单ID
+      orderId: orderId 
     }
   })
 }

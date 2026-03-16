@@ -394,4 +394,36 @@ public class PetInsuranceOrderController {
             return result(500, "查询订单详情失败：系统异常", null);
         }
     }
+    /**
+     * 删除宠物保险订单
+     * POST /api/order/delete/{orderId}
+     * @param orderId 订单ID
+     * @return 标准化JSON结果
+     */
+    @PostMapping("/delete/{orderId}")
+    public Map<String, Object> deleteOrder(@PathVariable Long orderId) {
+        // 参数校验
+        if (orderId == null || orderId <= 0) {
+            return result(400, "数据错误：订单ID必须为正整数", null);
+        }
+
+        try {
+            // 1. 检查订单是否存在
+            PetInsuranceOrder order = orderService.getById(orderId);
+            if (order == null) {
+                return result(404, "订单不存在", null);
+            }
+
+            // 2. 调用Service删除订单（根据业务需求选择物理删除/逻辑删除）
+            boolean success = orderService.removeById(orderId);
+            if (success) {
+                return result(200, "订单删除成功", null);
+            } else {
+                return result(500, "订单删除失败：数据库操作异常", null);
+            }
+        } catch (Exception e) {
+            log.error("删除订单异常, orderId:{}", orderId, e);
+            return result(500, "删除订单失败：" + e.getMessage(), null);
+        }
+    }
 }

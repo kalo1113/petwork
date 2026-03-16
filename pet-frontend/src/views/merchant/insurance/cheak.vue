@@ -82,18 +82,7 @@
             <el-tag v-if="scope.row.claimStatus === 4" type="info">已打款</el-tag>
           </template>
         </el-table-column>
-        <!-- 新增：等待期校验状态列 -->
-        <el-table-column
-          label="等待期校验"
-          width="180"
-        >
-          <template #default="scope">
-            <el-tag v-if="scope.row.waitingPeriodCheck === 'allPass'" type="success">全部通过</el-tag>
-            <el-tag v-if="scope.row.waitingPeriodCheck === 'partialFail'" type="warning">部分未通过</el-tag>
-            <el-tag v-if="scope.row.waitingPeriodCheck === 'allFail'" type="danger">全部未通过</el-tag>
-            <el-tag v-if="scope.row.waitingPeriodCheck === 'unknown'" type="info">待校验</el-tag>
-          </template>
-        </el-table-column>
+
       </el-table>
 
       <!-- 分页组件 -->
@@ -700,7 +689,9 @@ const getClaimData = async () => {
       claimList.value = list.map(item => {
         return {
           ...item,
-          waitingPeriodCheck: 'unknown' // 列表页暂不做具体校验，详情页再校验
+          // 新增：确保金额字段不为空，兜底为0
+          paymentAmount: item.paymentAmount || 0, // ✅ 关键：兜底处理
+          waitingPeriodCheck: 'unknown'
         }
       })
       pagination.total = data.data?.total || 0
@@ -797,58 +788,51 @@ const switchAuditType = (type) => {
 
 // ========== 审核通过（保存打款金额） ==========
 const handleAuditPass = async () => {
-  // 审核通过前校验等待期
   if (!waitingPeriodCheckResult.allPass && waitingPeriodCheckResult.unknown === false) {
-    ElMessage.error(waitingPeriodCheckResult.failReasons.join('、'))
-    return
+    ElMessage.error(waitingPeriodCheckResult.failReasons.join('、'));
+    return;
   }
-  
+
   try {
-    const claimId = claimDetail.claim.id
+    const claimId = claimDetail.claim.id;
     if (!claimId) {
-      ElMessage.warning('未获取到理赔单ID')
-      return
+      ElMessage.warning('未获取到理赔单ID');
+      return;
     }
     if (paymentAmount.value <= 0) {
-      ElMessage.warning('打款金额必须大于0')
-      return
+      ElMessage.warning('打款金额必须大于0');
+      return;
     }
 
     await ElMessageBox.confirm(
       `确定要审核通过该理赔单，打款金额为${paymentAmount.value}元吗？`,
       '审核确认',
       { confirmButtonText: '确定', cancelButtonText: '取消', type: 'success' }
-    )
+    );
 
-    // 1. 先更新打款金额
-    await updateClaimPaymentAmount({
-      id: claimId,
-      paymentAmount: paymentAmount.value
-    })
-
-    // 2. 再更新状态为审核通过
-    const params = {
+    // 🔥 关键：确保 paymentAmount 被正确传入
+    const res = await auditClaim({
       id: claimId,
       claimStatus: 2,
+      paymentAmount: paymentAmount.value, // <-- 这里必须有值！
       auditorId: 1,
       auditRemark: auditRemark.value || `审核通过，打款金额：${paymentAmount.value}元`
-    }
-    const res = await auditClaim(params)
-    const data = res.data || {}
-    if (data.success || data.code === 200) {
-      ElMessage.success('审核通过成功，已保存打款金额')
-      detailDialogVisible.value = false
-      getClaimData()
+    });
+
+    if (res.data.success) {
+      ElMessage.success('审核通过成功！');
+      detailDialogVisible.value = false;
+      getClaimData(); // 刷新列表
     } else {
-      ElMessage.error(data.message || data.msg || '审核通过失败')
+      ElMessage.error(res.data.message || '审核失败');
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('审核通过异常：', error)
-      ElMessage.error('审核通过操作失败，请重试')
+      console.error('审核通过异常：', error);
+      ElMessage.error('操作失败，请重试');
     }
   }
-}
+};
 
 // ========== 更新打款金额 ==========
 const handleUpdatePaymentAmount = async () => {
